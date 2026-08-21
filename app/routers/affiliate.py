@@ -52,7 +52,10 @@ def create_program(
 
     return db_program
 
-@router.get("/", response_model=AffiliateProgramListResponse)
+@router.get(
+    "/",
+    response_model=AffiliateProgramListResponse,
+)
 def get_programs(
     category: str | None = Query(
         default=None,
@@ -108,10 +111,8 @@ def get_programs(
             AffiliateProgram.reward_amount >= min_reward_amount
         )
 
-    # ページネーション前の総件数
     total = query.count()
 
-    # 実際に返すデータ
     programs = (
         query
         .order_by(AffiliateProgram.id.asc())
@@ -126,6 +127,7 @@ def get_programs(
         "limit": limit,
         "offset": offset,
     }
+
 
 @router.get("/{program_id}", response_model=AffiliateProgramResponse)
 def get_program(
