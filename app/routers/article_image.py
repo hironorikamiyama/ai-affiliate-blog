@@ -1,34 +1,22 @@
-from pathlib import Path
-from uuid import uuid4
-
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
+from app.models.affiliate import AffiliateProgram
 from app.models.article import Article
-from app.models.article_image import ArticleImage
-from app.schemas.article_image import (
-    ArticleImageResponse,
-    ArticleImageUpdate,
+from app.schemas.article import (
+    ArticleCreate,
+    ArticleUpdate,
+    ArticleListResponse,
+    ArticleResponse,
+    ArticleStatus,
 )
 
 
 router = APIRouter(
     prefix="/articles",
-    tags=["Article Images"],
+    tags=["Articles"],
 )
-
-
-UPLOAD_DIR = Path("uploads/articles")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-ALLOWED_CONTENT_TYPES = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-}
-
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 
 def get_db():
@@ -40,200 +28,299 @@ def get_db():
         db.close()
 
 
+# ========================================
+# CREATE
+# POST /articles/
+# ========================================
+
 @router.post(
-    "/{article_id}/images",
-    response_model=ArticleImageResponse,
+    "/",
+    response_model=ArticleResponse,
 )
-async def upload_article_image(
-    article_id: int,
-    file: UploadFile = File(...),
-    alt_text: str | None = Form(default=None),
-    caption: str | None = Form(default=None),
-    position: int = Form(default=0),
-    is_featured: bool = Form(default=False),
+def create_article(
+    article: ArticleCreate,
     db: Session = Depends(get_db),
 ):
-    article = (
-        db.query(Article)
-        .filter(Article.id == article_id)
+    # AffiliateProgramの存在確認
+    program = (
+        db.query(AffiliateProgram)
+        .filter(
+            AffiliateProgram.id
+            == article.affiliate_program_id
+        )
         .first()
     )
 
-    if article is None:
+    if program is None:
         raise HTTPException(
             status_code=404,
-            detail="Article not found",
+            detail="Affiliate program not found",
         )
 
-    if file.content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(
-            status_code=415,
-            detail="Only JPEG, PNG, and WebP images are allowed",
-        )
-
-    file_data = await file.read()
-
-    if len(file_data) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail="Image file is too large. Maximum size is 5MB",
-        )
-
-    extension = ALLOWED_CONTENT_TYPES[file.content_type]
-
-    stored_filename = f"{uuid4().hex}{extension}"
-
-    article_directory = UPLOAD_DIR / str(article_id)
-    article_directory.mkdir(
-        parents=True,
-        exist_ok=True,
+    # slug重複確認
+    existing_slug = (
+        db.query(Article)
+        .filter(Article.slug == article.slug)
+        .first()
     )
 
-    file_path = article_directory / stored_filename
-
-    with open(file_path, "wb") as buffer:
-        buffer.write(file_data)
-
-    if is_featured:
-        (
-            db.query(ArticleImage)
-            .filter(
-                ArticleImage.article_id == article_id,
-                ArticleImage.is_featured.is_(True),
-            )
-            .update(
-                {
-                    ArticleImage.is_featured: False
-                },
-                synchronize_session=False,
-            )
+    if existing_slug is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Article slug already exists",
         )
 
-    db_image = ArticleImage(
-        article_id=article_id,
-        file_path=str(file_path),
-        original_filename=file.filename or stored_filename,
-        alt_text=alt_text,
-        caption=caption,
-        position=position,
-        is_featured=is_featured,
+    db_article = Article(
+        affiliate_program_id=article.affiliate_program_id,
+        title=article.title,
+        slug=article.slug,
+        keyword=article.keyword,
+        meta_description=article.meta_description,
+        body=article.body,
+        status=article.status.value,
     )
 
-    db.add(db_image)
+    db.add(db_article)
     db.commit()
-    db.refresh(db_image)
+    db.refresh(db_article)
 
-    return db_image
+    return db_article
 
+
+# ========================================
+# LIST
+# GET /articles/
+# ========================================
 
 @router.get(
-    "/{article_id}/images",
-    response_model=list[ArticleImageResponse],
+    "/",
+    response_model=ArticleListResponse,
 )
-def get_article_images(
-    article_id: int,
+def get_articles(
+    status: ArticleStatus | None = None,
+    affiliate_program_id: int | None = Query(
+        default=None,
+        ge=1,
+    ),
+    keyword: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    limit: int = Query(
+        default=20,
+        ge=1,
+        le=100,
+    ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+    ),
     db: Session = Depends(get_db),
 ):
-    article = (
-        db.query(Article)
-        .filter(Article.id == article_id)
-        .first()
-    )
+    query = db.query(Article)
 
-    if article is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Article not found",
+    if status is not None:
+        query = query.filter(
+            Article.status == status.value
         )
 
-    images = (
-        db.query(ArticleImage)
-        .filter(ArticleImage.article_id == article_id)
-        .order_by(
-            ArticleImage.position.asc(),
-            ArticleImage.id.asc(),
+    if affiliate_program_id is not None:
+        query = query.filter(
+            Article.affiliate_program_id
+            == affiliate_program_id
         )
+
+    if keyword is not None:
+        query = query.filter(
+            Article.keyword.contains(keyword)
+        )
+
+    total = query.count()
+
+    articles = (
+        query
+        .order_by(Article.id.asc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
-    return images
+    return {
+        "items": articles,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
+
+# ========================================
+# GET BY SLUG
+# GET /articles/slug/{slug}
+#
+# IMPORTANT:
+# /{article_id} より前に定義する
+# ========================================
+
+@router.get(
+    "/slug/{slug}",
+    response_model=ArticleResponse,
+)
+def get_article_by_slug(
+    slug: str,
+    db: Session = Depends(get_db),
+):
+    article = (
+        db.query(Article)
+        .filter(Article.slug == slug)
+        .first()
+    )
+
+    if article is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article not found",
+        )
+
+    return article
+
+
+# ========================================
+# GET BY ID
+# GET /articles/{article_id}
+# ========================================
+
+@router.get(
+    "/{article_id}",
+    response_model=ArticleResponse,
+)
+def get_article(
+    article_id: int,
+    db: Session = Depends(get_db),
+):
+    article = (
+        db.query(Article)
+        .filter(Article.id == article_id)
+        .first()
+    )
+
+    if article is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article not found",
+        )
+
+    return article
+
+
+# ========================================
+# UPDATE
+# PATCH /articles/{article_id}
+# ========================================
 
 @router.patch(
-    "/article-images/{image_id}",
-    response_model=ArticleImageResponse,
+    "/{article_id}",
+    response_model=ArticleResponse,
 )
-def update_article_image(
-    image_id: int,
-    update_data: ArticleImageUpdate,
+def update_article(
+    article_id: int,
+    update_data: ArticleUpdate,
     db: Session = Depends(get_db),
 ):
-    image = (
-        db.query(ArticleImage)
-        .filter(ArticleImage.id == image_id)
+    article = (
+        db.query(Article)
+        .filter(Article.id == article_id)
         .first()
     )
 
-    if image is None:
+    if article is None:
         raise HTTPException(
             status_code=404,
-            detail="Article image not found",
+            detail="Article not found",
         )
 
-    data = update_data.model_dump(exclude_unset=True)
+    data = update_data.model_dump(
+        exclude_unset=True
+    )
 
-    # 新しくアイキャッチに指定する場合、
-    # 同じ記事の他画像をすべて解除する
-    if data.get("is_featured") is True:
-        (
-            db.query(ArticleImage)
+    # AffiliateProgramを変更する場合は存在確認
+    if "affiliate_program_id" in data:
+        program = (
+            db.query(AffiliateProgram)
             .filter(
-                ArticleImage.article_id == image.article_id,
-                ArticleImage.id != image_id,
-                ArticleImage.is_featured.is_(True),
+                AffiliateProgram.id
+                == data["affiliate_program_id"]
             )
-            .update(
-                {
-                    ArticleImage.is_featured: False
-                },
-                synchronize_session=False,
-            )
+            .first()
         )
+
+        if program is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Affiliate program not found",
+            )
+
+    # slugを変更する場合は重複確認
+    if "slug" in data:
+        existing_slug = (
+            db.query(Article)
+            .filter(
+                Article.slug == data["slug"],
+                Article.id != article_id,
+            )
+            .first()
+        )
+
+        if existing_slug is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Article slug already exists",
+            )
+
+    # Enum → DB保存用文字列
+    if (
+        "status" in data
+        and data["status"] is not None
+    ):
+        data["status"] = data["status"].value
 
     for field, value in data.items():
-        setattr(image, field, value)
+        setattr(
+            article,
+            field,
+            value,
+        )
 
     db.commit()
-    db.refresh(image)
+    db.refresh(article)
 
-    return image
+    return article
 
+
+# ========================================
+# DELETE
+# DELETE /articles/{article_id}
+# ========================================
 
 @router.delete(
-    "/article-images/{image_id}",
+    "/{article_id}",
     status_code=204,
 )
-def delete_article_image(
-    image_id: int,
+def delete_article(
+    article_id: int,
     db: Session = Depends(get_db),
 ):
-    image = (
-        db.query(ArticleImage)
-        .filter(ArticleImage.id == image_id)
+    article = (
+        db.query(Article)
+        .filter(Article.id == article_id)
         .first()
     )
 
-    if image is None:
+    if article is None:
         raise HTTPException(
             status_code=404,
-            detail="Article image not found",
+            detail="Article not found",
         )
 
-    file_path = Path(image.file_path)
-
-    db.delete(image)
+    db.delete(article)
     db.commit()
-
-    if file_path.exists():
-        file_path.unlink()
-        
