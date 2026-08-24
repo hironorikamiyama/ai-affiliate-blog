@@ -19,10 +19,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
-    pass
+    """Backfill existing article rows."""
+    op.execute(
+        """
+        UPDATE articles
+        SET
+            slug = 'article-' || id,
+            created_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE
+            slug IS NULL
+            OR created_at IS NULL
+            OR updated_at IS NULL
+        """
+    )
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
     pass

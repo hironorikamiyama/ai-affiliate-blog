@@ -1,7 +1,9 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.article_image import ArticleImageResponse
 
 
 class ArticleStatus(str, Enum):
@@ -13,9 +15,7 @@ class ArticleStatus(str, Enum):
 
 
 class ArticleCreate(BaseModel):
-    affiliate_program_id: int = Field(
-        ge=1,
-    )
+    affiliate_program_id: int = Field(ge=1)
 
     title: str = Field(
         min_length=1,
@@ -95,9 +95,13 @@ class ArticleResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {
-        "from_attributes": True
-    }
+    images: list[ArticleImageResponse] = Field(
+        default_factory=list,
+    )
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
 
 class ArticleListResponse(BaseModel):
@@ -105,4 +109,3 @@ class ArticleListResponse(BaseModel):
     total: int
     limit: int
     offset: int
-    

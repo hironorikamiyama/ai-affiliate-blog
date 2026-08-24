@@ -75,4 +75,10 @@ class Article(Base):
         "AffiliateProgram",
         back_populates="articles",
     )
-    
+
+    images = relationship(
+        "ArticleImage",
+        back_populates="article",
+        cascade="all, delete-orphan",
+        order_by="ArticleImage.position",
+    )

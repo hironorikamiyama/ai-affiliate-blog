@@ -14,3 +14,8 @@ __pycache__/
 
 # IDE
 .vscode/
+
+# Uploaded files
+uploads/*
+!uploads/.gitkeep
+
