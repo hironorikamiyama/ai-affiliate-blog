@@ -2,9 +2,23 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+MODEL_NAME = (
+    "sentence-transformers/"
+    "paraphrase-multilingual-MiniLM-L12-v2"
+)
 
-model = SentenceTransformer(MODEL_NAME)
+_model: SentenceTransformer | None = None
+
+
+def get_model() -> SentenceTransformer:
+    global _model
+
+    if _model is None:
+        _model = SentenceTransformer(
+            MODEL_NAME
+        )
+
+    return _model
 
 
 def build_article_text(article) -> str:
@@ -41,6 +55,8 @@ def get_embedding_similar_articles(
         build_article_text(article)
         for article in all_articles
     ]
+
+    model = get_model()
 
     embeddings = model.encode(
         documents,
