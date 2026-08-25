@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.db.database import SessionLocal
+from app.db.database import get_db
 from app.models.affiliate import AffiliateProgram
 from app.models.article import Article
 from app.schemas.article import (
@@ -12,20 +13,17 @@ from app.schemas.article import (
     ArticleStatus,
 )
 
+
 router = APIRouter(
     prefix="/articles",
     tags=["Articles"],
 )
 
 
-def get_db():
-    db = SessionLocal()
-
-    try:
-        yield db
-    finally:
-        db.close()
-
+# ========================================
+# CREATE
+# POST /articles/
+# ========================================
 
 @router.post(
     "/",
@@ -35,6 +33,7 @@ def create_article(
     article: ArticleCreate,
     db: Session = Depends(get_db),
 ):
+    # AffiliateProgramの存在確認
     program = (
         db.query(AffiliateProgram)
         .filter(
@@ -50,6 +49,7 @@ def create_article(
             detail="Affiliate program not found",
         )
 
+    # slug重複確認
     existing_slug = (
         db.query(Article)
         .filter(Article.slug == article.slug)
@@ -72,11 +72,34 @@ def create_article(
         status=article.status.value,
     )
 
-    db.add(db_article)
-    db.commit()
-    db.refresh(db_article)
+    try:
+        db.add(db_article)
+        db.commit()
+        db.refresh(db_article)
+
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail="Article conflicts with existing data",
+        )
+
+    except SQLAlchemyError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create article",
+        )
 
     return db_article
+
+
+# ========================================
+# LIST
+# GET /articles/
+# ========================================
 
 @router.get(
     "/",
@@ -139,6 +162,43 @@ def get_articles(
         "offset": offset,
     }
 
+
+# ========================================
+# GET BY SLUG
+# GET /articles/slug/{slug}
+#
+# IMPORTANT:
+# /{article_id} より前に定義する
+# ========================================
+
+@router.get(
+    "/slug/{slug}",
+    response_model=ArticleResponse,
+)
+def get_article_by_slug(
+    slug: str,
+    db: Session = Depends(get_db),
+):
+    article = (
+        db.query(Article)
+        .filter(Article.slug == slug)
+        .first()
+    )
+
+    if article is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article not found",
+        )
+
+    return article
+
+
+# ========================================
+# GET BY ID
+# GET /articles/{article_id}
+# ========================================
+
 @router.get(
     "/{article_id}",
     response_model=ArticleResponse,
@@ -161,6 +221,12 @@ def get_article(
 
     return article
 
+
+# ========================================
+# UPDATE
+# PATCH /articles/{article_id}
+# ========================================
+
 @router.patch(
     "/{article_id}",
     response_model=ArticleResponse,
@@ -182,8 +248,11 @@ def update_article(
             detail="Article not found",
         )
 
-    data = update_data.model_dump(exclude_unset=True)
+    data = update_data.model_dump(
+        exclude_unset=True
+    )
 
+    # AffiliateProgramを変更する場合は存在確認
     if "affiliate_program_id" in data:
         program = (
             db.query(AffiliateProgram)
@@ -200,6 +269,7 @@ def update_article(
                 detail="Affiliate program not found",
             )
 
+    # slugを変更する場合は重複確認
     if "slug" in data:
         existing_slug = (
             db.query(Article)
@@ -216,17 +286,47 @@ def update_article(
                 detail="Article slug already exists",
             )
 
-    if "status" in data and data["status"] is not None:
+    # Enum → DB保存用文字列
+    if (
+        "status" in data
+        and data["status"] is not None
+    ):
         data["status"] = data["status"].value
 
     for field, value in data.items():
-        setattr(article, field, value)
+        setattr(
+            article,
+            field,
+            value,
+        )
 
-    db.commit()
-    db.refresh(article)
+    try:
+        db.commit()
+        db.refresh(article)
+
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail="Article conflicts with existing data",
+        )
+
+    except SQLAlchemyError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update article",
+        )
 
     return article
 
+
+# ========================================
+# DELETE
+# DELETE /articles/{article_id}
+# ========================================
 
 @router.delete(
     "/{article_id}",
@@ -248,6 +348,22 @@ def delete_article(
             detail="Article not found",
         )
 
-    db.delete(article)
-    db.commit()
+    try:
+        db.delete(article)
+        db.commit()
 
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail="Article is referenced by other data",
+        )
+
+    except SQLAlchemyError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete article",
+        )

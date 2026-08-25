@@ -1,200 +1,223 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.db.database import SessionLocal
-from app.models.affiliate import AffiliateProgram
+from app.db.database import get_db
 from app.models.article import Article
-from app.schemas.article import (
-    ArticleCreate,
-    ArticleUpdate,
-    ArticleListResponse,
-    ArticleResponse,
-    ArticleStatus,
+from app.models.article_image import ArticleImage
+from app.schemas.article_image import (
+    ArticleImageResponse,
+    ArticleImageUpdate,
 )
 
 
 router = APIRouter(
     prefix="/articles",
-    tags=["Articles"],
+    tags=["Article Images"],
 )
 
 
-def get_db():
-    db = SessionLocal()
+UPLOAD_DIR = Path("uploads/articles")
+UPLOAD_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
+)
 
-    try:
-        yield db
-    finally:
-        db.close()
+ALLOWED_CONTENT_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 
 # ========================================
 # CREATE
-# POST /articles/
+# POST /articles/{article_id}/images
 # ========================================
 
 @router.post(
-    "/",
-    response_model=ArticleResponse,
+    "/{article_id}/images",
+    response_model=ArticleImageResponse,
 )
-def create_article(
-    article: ArticleCreate,
+async def upload_article_image(
+    article_id: int,
+    file: UploadFile = File(...),
+    alt_text: str | None = Form(default=None),
+    caption: str | None = Form(default=None),
+    position: int = Form(default=0),
+    is_featured: bool = Form(default=False),
     db: Session = Depends(get_db),
 ):
-    # AffiliateProgramの存在確認
-    program = (
-        db.query(AffiliateProgram)
-        .filter(
-            AffiliateProgram.id
-            == article.affiliate_program_id
-        )
+    # Article存在確認
+    article = (
+        db.query(Article)
+        .filter(Article.id == article_id)
         .first()
     )
 
-    if program is None:
+    if article is None:
         raise HTTPException(
             status_code=404,
-            detail="Affiliate program not found",
+            detail="Article not found",
         )
 
-    # slug重複確認
-    existing_slug = (
-        db.query(Article)
-        .filter(Article.slug == article.slug)
-        .first()
+    # MIME type確認
+    if file.content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail="Only JPEG, PNG, and WebP images are allowed",
+        )
+
+    # UploadFile読み込み
+    try:
+        file_data = await file.read()
+
+    except OSError:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to read uploaded image",
+        )
+
+    # サイズ確認
+    if len(file_data) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="Image file is too large. Maximum size is 5MB",
+        )
+
+    extension = ALLOWED_CONTENT_TYPES[
+        file.content_type
+    ]
+
+    stored_filename = (
+        f"{uuid4().hex}{extension}"
     )
 
-    if existing_slug is not None:
+    article_directory = (
+        UPLOAD_DIR / str(article_id)
+    )
+
+    file_path = (
+        article_directory / stored_filename
+    )
+
+    # ====================================
+    # ファイル保存
+    # ====================================
+
+    try:
+        article_directory.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        with open(file_path, "wb") as buffer:
+            buffer.write(file_data)
+
+    except OSError:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save image file",
+        )
+
+    # ====================================
+    # DB登録
+    # ====================================
+
+    try:
+        # 新しい画像をアイキャッチにする場合、
+        # 同じ記事の既存アイキャッチを解除
+        if is_featured:
+            (
+                db.query(ArticleImage)
+                .filter(
+                    ArticleImage.article_id
+                    == article_id,
+                    ArticleImage.is_featured.is_(
+                        True
+                    ),
+                )
+                .update(
+                    {
+                        ArticleImage.is_featured:
+                        False
+                    },
+                    synchronize_session=False,
+                )
+            )
+
+        db_image = ArticleImage(
+            article_id=article_id,
+            file_path=str(file_path),
+            original_filename=(
+                file.filename
+                or stored_filename
+            ),
+            alt_text=alt_text,
+            caption=caption,
+            position=position,
+            is_featured=is_featured,
+        )
+
+        db.add(db_image)
+        db.commit()
+        db.refresh(db_image)
+
+    except IntegrityError:
+        db.rollback()
+
+        # DB登録失敗時は保存済みファイルを削除
+        try:
+            if file_path.exists():
+                file_path.unlink()
+        except OSError:
+            pass
+
         raise HTTPException(
             status_code=409,
-            detail="Article slug already exists",
+            detail="Article image conflicts with existing data",
         )
 
-    db_article = Article(
-        affiliate_program_id=article.affiliate_program_id,
-        title=article.title,
-        slug=article.slug,
-        keyword=article.keyword,
-        meta_description=article.meta_description,
-        body=article.body,
-        status=article.status.value,
-    )
+    except SQLAlchemyError:
+        db.rollback()
 
-    db.add(db_article)
-    db.commit()
-    db.refresh(db_article)
+        # DB登録失敗時は保存済みファイルを削除
+        try:
+            if file_path.exists():
+                file_path.unlink()
+        except OSError:
+            pass
 
-    return db_article
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save article image information",
+        )
+
+    return db_image
 
 
 # ========================================
 # LIST
-# GET /articles/
+# GET /articles/{article_id}/images
 # ========================================
 
 @router.get(
-    "/",
-    response_model=ArticleListResponse,
+    "/{article_id}/images",
+    response_model=list[ArticleImageResponse],
 )
-def get_articles(
-    status: ArticleStatus | None = None,
-    affiliate_program_id: int | None = Query(
-        default=None,
-        ge=1,
-    ),
-    keyword: str | None = Query(
-        default=None,
-        min_length=1,
-        max_length=200,
-    ),
-    limit: int = Query(
-        default=20,
-        ge=1,
-        le=100,
-    ),
-    offset: int = Query(
-        default=0,
-        ge=0,
-    ),
-    db: Session = Depends(get_db),
-):
-    query = db.query(Article)
-
-    if status is not None:
-        query = query.filter(
-            Article.status == status.value
-        )
-
-    if affiliate_program_id is not None:
-        query = query.filter(
-            Article.affiliate_program_id
-            == affiliate_program_id
-        )
-
-    if keyword is not None:
-        query = query.filter(
-            Article.keyword.contains(keyword)
-        )
-
-    total = query.count()
-
-    articles = (
-        query
-        .order_by(Article.id.asc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-
-    return {
-        "items": articles,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-    }
-
-
-# ========================================
-# GET BY SLUG
-# GET /articles/slug/{slug}
-#
-# IMPORTANT:
-# /{article_id} より前に定義する
-# ========================================
-
-@router.get(
-    "/slug/{slug}",
-    response_model=ArticleResponse,
-)
-def get_article_by_slug(
-    slug: str,
-    db: Session = Depends(get_db),
-):
-    article = (
-        db.query(Article)
-        .filter(Article.slug == slug)
-        .first()
-    )
-
-    if article is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Article not found",
-        )
-
-    return article
-
-
-# ========================================
-# GET BY ID
-# GET /articles/{article_id}
-# ========================================
-
-@router.get(
-    "/{article_id}",
-    response_model=ArticleResponse,
-)
-def get_article(
+def get_article_images(
     article_id: int,
     db: Session = Depends(get_db),
 ):
@@ -210,117 +233,175 @@ def get_article(
             detail="Article not found",
         )
 
-    return article
+    images = (
+        db.query(ArticleImage)
+        .filter(
+            ArticleImage.article_id
+            == article_id
+        )
+        .order_by(
+            ArticleImage.position.asc(),
+            ArticleImage.id.asc(),
+        )
+        .all()
+    )
+
+    return images
 
 
 # ========================================
 # UPDATE
-# PATCH /articles/{article_id}
+# PATCH /articles/article-images/{image_id}
 # ========================================
 
 @router.patch(
-    "/{article_id}",
-    response_model=ArticleResponse,
+    "/article-images/{image_id}",
+    response_model=ArticleImageResponse,
 )
-def update_article(
-    article_id: int,
-    update_data: ArticleUpdate,
+def update_article_image(
+    image_id: int,
+    update_data: ArticleImageUpdate,
     db: Session = Depends(get_db),
 ):
-    article = (
-        db.query(Article)
-        .filter(Article.id == article_id)
+    image = (
+        db.query(ArticleImage)
+        .filter(
+            ArticleImage.id == image_id
+        )
         .first()
     )
 
-    if article is None:
+    if image is None:
         raise HTTPException(
             status_code=404,
-            detail="Article not found",
+            detail="Article image not found",
         )
 
     data = update_data.model_dump(
         exclude_unset=True
     )
 
-    # AffiliateProgramを変更する場合は存在確認
-    if "affiliate_program_id" in data:
-        program = (
-            db.query(AffiliateProgram)
-            .filter(
-                AffiliateProgram.id
-                == data["affiliate_program_id"]
+    try:
+        # 新しくアイキャッチに指定する場合、
+        # 同じ記事の他画像をすべて解除
+        if data.get("is_featured") is True:
+            (
+                db.query(ArticleImage)
+                .filter(
+                    ArticleImage.article_id
+                    == image.article_id,
+                    ArticleImage.id
+                    != image_id,
+                    ArticleImage.is_featured.is_(
+                        True
+                    ),
+                )
+                .update(
+                    {
+                        ArticleImage.is_featured:
+                        False
+                    },
+                    synchronize_session=False,
+                )
             )
-            .first()
+
+        for field, value in data.items():
+            setattr(
+                image,
+                field,
+                value,
+            )
+
+        db.commit()
+        db.refresh(image)
+
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail="Article image conflicts with existing data",
         )
 
-        if program is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Affiliate program not found",
-            )
+    except SQLAlchemyError:
+        db.rollback()
 
-    # slugを変更する場合は重複確認
-    if "slug" in data:
-        existing_slug = (
-            db.query(Article)
-            .filter(
-                Article.slug == data["slug"],
-                Article.id != article_id,
-            )
-            .first()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update article image",
         )
 
-        if existing_slug is not None:
-            raise HTTPException(
-                status_code=409,
-                detail="Article slug already exists",
-            )
-
-    # Enum → DB保存用文字列
-    if (
-        "status" in data
-        and data["status"] is not None
-    ):
-        data["status"] = data["status"].value
-
-    for field, value in data.items():
-        setattr(
-            article,
-            field,
-            value,
-        )
-
-    db.commit()
-    db.refresh(article)
-
-    return article
+    return image
 
 
 # ========================================
 # DELETE
-# DELETE /articles/{article_id}
+# DELETE /articles/article-images/{image_id}
 # ========================================
 
 @router.delete(
-    "/{article_id}",
+    "/article-images/{image_id}",
     status_code=204,
 )
-def delete_article(
-    article_id: int,
+def delete_article_image(
+    image_id: int,
     db: Session = Depends(get_db),
 ):
-    article = (
-        db.query(Article)
-        .filter(Article.id == article_id)
+    image = (
+        db.query(ArticleImage)
+        .filter(
+            ArticleImage.id == image_id
+        )
         .first()
     )
 
-    if article is None:
+    if image is None:
         raise HTTPException(
             status_code=404,
-            detail="Article not found",
+            detail="Article image not found",
         )
 
-    db.delete(article)
-    db.commit()
+    file_path = Path(image.file_path)
+
+    # ====================================
+    # DB削除
+    # ====================================
+
+    try:
+        db.delete(image)
+        db.commit()
+
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail="Article image is referenced by other data",
+        )
+
+    except SQLAlchemyError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete article image",
+        )
+
+    # ====================================
+    # 実ファイル削除
+    #
+    # DB削除成功後なので、
+    # ファイル削除失敗によって
+    # API全体を失敗扱いにはしない
+    # ====================================
+
+    try:
+        if file_path.exists():
+            file_path.unlink()
+
+    except OSError:
+        # DB上では削除済み。
+        # 孤児ファイルが残る可能性はあるが、
+        # DB削除自体は成功しているため
+        # ここでは500にしない。
+        pass
