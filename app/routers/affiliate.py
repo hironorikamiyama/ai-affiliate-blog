@@ -13,6 +13,9 @@ from app.schemas.affiliate import (
     RewardType,
 )
 
+from app.services.article_embedding import (
+    get_embedding_similar_articles,
+)
 
 router = APIRouter(
     prefix="/programs",

@@ -18,6 +18,10 @@ from app.services.article_similarity import (
     get_similar_articles,
 )
 
+from app.services.article_embedding import (
+    get_embedding_similar_articles,
+)
+
 router = APIRouter(
     prefix="/articles",
     tags=["Articles"],
@@ -172,7 +176,7 @@ def get_articles(
 # GET /articles/slug/{slug}
 #
 # IMPORTANT:
-# /{article_id} より前に定義する
+# /{article_id}/similar より前に定義する
 # ========================================
 
 @router.get(
@@ -200,6 +204,9 @@ def get_article_by_slug(
 # ========================================
 # GET BY similar
 # GET /{article_id}/similar
+
+# IMPORTANT:
+# /{article_id}/similar/embedding より前に定義する
 # ========================================
 @router.get(
     "/{article_id}/similar",
@@ -237,6 +244,58 @@ def get_article_similarities(
         articles=articles,
         limit=limit,
     )
+
+# ========================================
+# GET BY similar
+# GET /{article_id}/similar/embedding
+
+# IMPORTANT:
+# /{article_id} より前に定義する
+# ========================================
+
+@router.get(
+    "/{article_id}/similar/embedding",
+    response_model=list[SimilarArticleResponse],
+)
+def get_article_embedding_similarities(
+    article_id: int,
+    limit: int = Query(
+        default=5,
+        ge=1,
+        le=20,
+    ),
+    min_similarity: float = Query(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+    ),
+    db: Session = Depends(get_db),
+):
+    target_article = (
+        db.query(Article)
+        .filter(Article.id == article_id)
+        .first()
+    )
+
+    if target_article is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article not found",
+        )
+
+    articles = (
+        db.query(Article)
+        .order_by(Article.id.asc())
+        .all()
+    )
+
+    return get_embedding_similar_articles(
+        target_article=target_article,
+        articles=articles,
+        limit=limit,
+        min_similarity=min_similarity,
+    )
+
 
 # ========================================
 # GET BY ID
