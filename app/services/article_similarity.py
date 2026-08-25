@@ -12,55 +12,65 @@ def build_article_text(article) -> str:
     )
 
 
-def calculate_similarities(articles):
-    if len(articles) < 2:
+def get_similar_articles(
+    target_article,
+    articles,
+    limit: int = 5,
+):
+    candidates = [
+        article
+        for article in articles
+        if article.id != target_article.id
+    ]
+
+    if not candidates:
         return []
+
+    all_articles = [
+        target_article,
+        *candidates,
+    ]
 
     documents = [
         build_article_text(article)
-        for article in articles
+        for article in all_articles
     ]
 
     vectorizer = TfidfVectorizer()
 
-    tfidf_matrix = vectorizer.fit_transform(
-        documents
-    )
+    try:
+        tfidf_matrix = vectorizer.fit_transform(
+            documents
+        )
+    except ValueError:
+        return []
 
-    similarity_matrix = cosine_similarity(
-        tfidf_matrix
-    )
+    target_vector = tfidf_matrix[0:1]
+    candidate_vectors = tfidf_matrix[1:]
+
+    similarities = cosine_similarity(
+        target_vector,
+        candidate_vectors,
+    )[0]
 
     results = []
 
-    for i, article in enumerate(articles):
-        similarities = []
-
-        for j, other_article in enumerate(articles):
-            if i == j:
-                continue
-
-            similarities.append(
-                {
-                    "article_id": other_article.id,
-                    "title": other_article.title,
-                    "similarity": float(
-                        similarity_matrix[i][j]
-                    ),
-                }
-            )
-
-        similarities.sort(
-            key=lambda x: x["similarity"],
-            reverse=True,
-        )
-
+    for article, similarity in zip(
+        candidates,
+        similarities,
+    ):
         results.append(
             {
                 "article_id": article.id,
                 "title": article.title,
-                "similar_articles": similarities,
+                "slug": article.slug,
+                "similarity": float(similarity),
             }
         )
 
-    return results
+    results.sort(
+        key=lambda item: item["similarity"],
+        reverse=True,
+    )
+
+    return results[:limit]

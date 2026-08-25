@@ -11,8 +11,12 @@ from app.schemas.article import (
     ArticleListResponse,
     ArticleResponse,
     ArticleStatus,
+    SimilarArticleResponse,
 )
 
+from app.services.article_similarity import (
+    get_similar_articles,
+)
 
 router = APIRouter(
     prefix="/articles",
@@ -193,6 +197,46 @@ def get_article_by_slug(
 
     return article
 
+# ========================================
+# GET BY similar
+# GET /{article_id}/similar
+# ========================================
+@router.get(
+    "/{article_id}/similar",
+    response_model=list[SimilarArticleResponse],
+)
+def get_article_similarities(
+    article_id: int,
+    limit: int = Query(
+        default=5,
+        ge=1,
+        le=20,
+    ),
+    db: Session = Depends(get_db),
+):
+    target_article = (
+        db.query(Article)
+        .filter(Article.id == article_id)
+        .first()
+    )
+
+    if target_article is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article not found",
+        )
+
+    articles = (
+        db.query(Article)
+        .order_by(Article.id.asc())
+        .all()
+    )
+
+    return get_similar_articles(
+        target_article=target_article,
+        articles=articles,
+        limit=limit,
+    )
 
 # ========================================
 # GET BY ID

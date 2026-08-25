@@ -109,3 +109,9 @@ class ArticleListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+class SimilarArticleResponse(BaseModel):
+    article_id: int
+    title: str
+    slug: str
+    similarity: float
