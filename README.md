@@ -322,3 +322,19 @@ AIにすべてを任せるのではなく、
 ## Status
 
 Under active development.
+
+## AI Prompt Generation
+
+LLMへの指示を固定Promptだけで管理するのではなく、
+記事目的・検索キーワード・カテゴリ・アフィリエイト案件などから
+記事生成Promptを動的に構築する機能を検討しています。
+
+- Prompt Generator
+- Prompt Template Management
+- Prompt Versioning
+- Search Intent Analysis
+- Target Reader Definition
+- Required Topic Generation
+- SEO Analyzerとの連携
+- Prompt Optimization
+- Mock / LLM Provider切替
