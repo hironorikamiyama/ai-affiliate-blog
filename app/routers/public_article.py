@@ -10,11 +10,31 @@ from app.schemas.article import (
     ArticleResponse,
 )
 
+from app.services.affiliate_link_renderer import (
+    expand_affiliate_links,
+)
 
 router = APIRouter(
     prefix="/public/articles",
     tags=["Public Articles"],
 )
+
+def build_public_article_response(
+    article: Article,
+    db: Session,
+) -> ArticleResponse:
+    response = ArticleResponse.model_validate(
+        article
+    )
+
+    return response.model_copy(
+        update={
+            "body": expand_affiliate_links(
+                body=response.body,
+                db=db,
+            )
+        }
+    )
 
 
 # ========================================
@@ -91,7 +111,13 @@ def get_public_articles(
     )
 
     return {
-        "items": articles,
+        "items": [
+            build_public_article_response(
+                article=article,
+                db=db,
+            )
+            for article in articles
+        ],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -126,4 +152,7 @@ def get_public_article_by_slug(
             detail="Published article not found",
         )
 
-    return article
+    return build_public_article_response(
+        article=article,
+        db=db,
+    )
