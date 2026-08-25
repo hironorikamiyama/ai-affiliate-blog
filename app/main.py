@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.config import settings
 from app.db.database import Base, engine
 from app.models.affiliate import AffiliateProgram
 from app.models.article import Article
@@ -25,7 +26,10 @@ app = FastAPI(
 
 app.mount(
     "/uploads",
-    StaticFiles(directory="uploads"),
+    StaticFiles(
+        directory=settings.upload_dir,
+        check_dir=False,
+    ),
     name="uploads",
 )
 

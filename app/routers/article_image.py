@@ -12,6 +12,7 @@ from fastapi import (
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db.database import get_db
 from app.models.article import Article
 from app.models.article_image import ArticleImage
@@ -26,8 +27,7 @@ router = APIRouter(
     tags=["Article Images"],
 )
 
-
-UPLOAD_DIR = Path("uploads/articles")
+UPLOAD_DIR = Path(settings.upload_dir) / "articles"
 UPLOAD_DIR.mkdir(
     parents=True,
     exist_ok=True,
