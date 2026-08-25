@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>新規記事生成</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 40px;
+        }
+
+        h1 {
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        input[type="text"],
+        select {
+            width: 100%;
+            max-width: 700px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        .tag-list {
+            margin-top: 10px;
+        }
+
+        .tag-item {
+            margin-bottom: 8px;
+        }
+
+        .actions {
+            margin-top: 30px;
+        }
+
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+
+        .back-link {
+            margin-left: 15px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>新規記事生成</h1>
+
+    <form method="post" action="/admin/articles/generate">
+
+        <div class="form-group">
+            <label for="keyword">
+                キーワード
+            </label>
+
+            <input
+                type="text"
+                id="keyword"
+                name="keyword"
+                placeholder="例：片浜 電車釣行 ショアジギング"
+                required
+            >
+        </div>
+
+
+        <div class="form-group">
+            <label for="affiliate_program_id">
+                アフィリエイト案件
+            </label>
+
+            <select
+                id="affiliate_program_id"
+                name="affiliate_program_id"
+                required
+            >
+                <option value="">
+                    選択してください
+                </option>
+
+                {% for program in affiliate_programs %}
+                    <option value="{{ program.id }}">
+                        {{ program.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+
+        <div class="form-group">
+            <label for="category_id">
+                カテゴリ
+            </label>
+
+            <select
+                id="category_id"
+                name="category_id"
+                required
+            >
+                <option value="">
+                    選択してください
+                </option>
+
+                {% for category in categories %}
+                    <option value="{{ category.id }}">
+                        {{ category.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+
+        <div class="form-group">
+
+            <label>
+                タグ
+            </label>
+
+            <div class="tag-list">
+
+                {% for tag in tags %}
+
+                    <div class="tag-item">
+
+                        <label>
+                            <input
+                                type="checkbox"
+                                name="tag_ids"
+                                value="{{ tag.id }}"
+                            >
+
+                            {{ tag.name }}
+
+                        </label>
+
+                    </div>
+
+                {% endfor %}
+
+            </div>
+
+        </div>
+
+
+        <div class="actions">
+
+            <button type="submit">
+                記事を生成
+            </button>
+
+            <a
+                href="/admin/articles"
+                class="back-link"
+            >
+                記事一覧へ戻る
+            </a>
+
+        </div>
+
+    </form>
+
+</body>
+</html>

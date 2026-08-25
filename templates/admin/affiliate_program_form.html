@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>
+        {% if program %}
+            アフィリエイト案件編集
+        {% else %}
+            アフィリエイト案件登録
+        {% endif %}
+    </title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .field {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        input,
+        textarea,
+        select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+        }
+
+        textarea {
+            min-height: 160px;
+        }
+
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+
+        .back {
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+<a
+    class="back"
+    href="/admin/affiliate-programs"
+>
+    ← 案件一覧へ戻る
+</a>
+
+{% if program %}
+    <h1>アフィリエイト案件編集</h1>
+{% else %}
+    <h1>アフィリエイト案件登録</h1>
+{% endif %}
+
+
+<form method="post">
+
+    <div class="field">
+        <label for="name">
+            案件名
+        </label>
+
+        <input
+            id="name"
+            name="name"
+            type="text"
+            value="{{ program.name if program else '' }}"
+            required
+        >
+    </div>
+
+
+    <div class="field">
+        <label for="asp_name">
+            ASP名
+        </label>
+
+        <input
+            id="asp_name"
+            name="asp_name"
+            type="text"
+            value="{{ program.asp_name if program else '' }}"
+            required
+        >
+    </div>
+
+
+    <div class="field">
+        <label for="affiliate_url">
+            アフィリエイトURL
+        </label>
+
+        <input
+            id="affiliate_url"
+            name="affiliate_url"
+            type="url"
+            value="{{ program.affiliate_url if program else '' }}"
+            required
+        >
+    </div>
+
+
+    <div class="field">
+        <label for="category">
+            案件カテゴリ
+        </label>
+
+        <input
+            id="category"
+            name="category"
+            type="text"
+            value="{{ program.category if program else '' }}"
+            required
+        >
+    </div>
+
+
+    <div class="field">
+        <label for="reward_amount">
+            報酬額
+        </label>
+
+        <input
+            id="reward_amount"
+            name="reward_amount"
+            type="number"
+            step="0.01"
+            value="{% if program and program.reward_amount is not none %}{{ program.reward_amount }}{% endif %}"
+        >
+    </div>
+
+
+    <div class="field">
+        <label for="reward_type">
+            報酬タイプ
+        </label>
+
+        <select
+            id="reward_type"
+            name="reward_type"
+        >
+            <option
+                value="fixed"
+                {% if not program or program.reward_type == "fixed" %}
+                selected
+                {% endif %}
+            >
+                fixed
+            </option>
+
+            <option
+                value="percentage"
+                {% if program and program.reward_type == "percentage" %}
+                selected
+                {% endif %}
+            >
+                percentage
+            </option>
+        </select>
+    </div>
+
+
+    <div class="field">
+        <label for="status">
+            ステータス
+        </label>
+
+        <select
+            id="status"
+            name="status"
+        >
+            <option
+                value="active"
+                {% if not program or program.status == "active" %}
+                selected
+                {% endif %}
+            >
+                active
+            </option>
+
+            <option
+                value="inactive"
+                {% if program and program.status == "inactive" %}
+                selected
+                {% endif %}
+            >
+                inactive
+            </option>
+        </select>
+    </div>
+
+
+    <div class="field">
+        <label for="description">
+            説明
+        </label>
+
+        <textarea
+            id="description"
+            name="description"
+        >{{ program.description if program and program.description else '' }}</textarea>
+    </div>
+
+
+    <button type="submit">
+        {% if program %}
+            保存
+        {% else %}
+            登録
+        {% endif %}
+    </button>
+
+</form>
+
+{% if program %}
+
+<hr style="margin: 40px 0;">
+
+<div class="field">
+
+    <h2>案件削除</h2>
+
+    <p>
+        この案件を削除します。
+        記事から使用されている案件は削除できません。
+    </p>
+
+    <form
+        method="post"
+        action="/admin/affiliate-programs/{{ program.id }}/delete"
+        onsubmit="return confirm('この案件を削除しますか？');"
+    >
+        <button type="submit">
+            削除する
+        </button>
+    </form>
+
+</div>
+
+{% endif %}
+
+</body>
+</html>

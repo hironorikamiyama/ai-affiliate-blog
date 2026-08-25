@@ -1,48 +1,82 @@
+from pathlib import Path
+
 from fastapi import FastAPI
-
-from app.config import settings
-from app.db.database import Base, engine
-from app.models.affiliate import AffiliateProgram
-from app.models.article import Article
-from app.models.article_image import ArticleImage
-
-from app.routers.affiliate import router as affiliate_router
-from app.routers.article import router as article_router
-from app.routers.article_image import router as article_image_router
-from app.routers.public_article import router as public_article_router
-from app.routers.category import router as category_router
-from app.routers.tag import router as tag_router
-
-
 from fastapi.staticfiles import StaticFiles
 
+from app.config import settings
 
-Base.metadata.create_all(bind=engine)
+from app.routers import affiliate
+from app.routers import article
+from app.routers import article_image
+from app.routers import category
+from app.routers import tag
+from app.routers import public_article
+from app.routers import admin
+from app.routers import web
+
 
 app = FastAPI(
     title="AI Affiliate Blog API",
-    version="0.1.0",
 )
+
+
+# ========================================
+# Upload directory
+# ========================================
+
+upload_dir = Path(settings.upload_dir)
+
+upload_dir.mkdir(
+    parents=True,
+    exist_ok=True,
+)
+
+
+# ========================================
+# Static files
+# ========================================
 
 app.mount(
     "/uploads",
     StaticFiles(
-        directory=settings.upload_dir,
-        check_dir=False,
+        directory=str(upload_dir),
     ),
     name="uploads",
 )
 
-app.include_router(affiliate_router)
-app.include_router(article_router)
-app.include_router(article_image_router)
-app.include_router(public_article_router)
-app.include_router(category_router)
-app.include_router(tag_router)
 
-@app.get("/health")
-def health_check():
-    return {
-        "status": "ok",
-        "message": "AI Affiliate Blog API is running",
-    }
+# ========================================
+# Routers
+# ========================================
+
+app.include_router(
+    affiliate.router
+)
+
+app.include_router(
+    article.router
+)
+
+app.include_router(
+    article_image.router
+)
+
+app.include_router(
+    category.router
+)
+
+app.include_router(
+    tag.router
+)
+
+app.include_router(
+    public_article.router
+)
+
+app.include_router(
+    admin.router
+)
+
+app.include_router(
+    web.router
+)

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>{{ article.title }}</title>
+
+    {% if article.meta_description %}
+    <meta
+        name="description"
+        content="{{ article.meta_description }}"
+    >
+    {% endif %}
+
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.8;
+            margin: 0;
+            background: #f7f7f7;
+            color: #222;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            background: #fff;
+            min-height: 100vh;
+        }
+
+        .article-header {
+            margin-bottom: 32px;
+        }
+
+        .article-title {
+            font-size: 2rem;
+            line-height: 1.4;
+            margin-bottom: 16px;
+        }
+
+        .article-meta {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .category {
+            margin-right: 12px;
+        }
+
+        .tags {
+            margin-top: 8px;
+        }
+
+        .tag {
+            display: inline-block;
+            margin-right: 8px;
+            margin-bottom: 4px;
+            padding: 3px 8px;
+            background: #eee;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+
+        .article-body {
+            margin-top: 32px;
+        }
+
+        .article-body h1,
+        .article-body h2,
+        .article-body h3 {
+            margin-top: 32px;
+            margin-bottom: 16px;
+        }
+
+        .article-body p {
+            margin-bottom: 16px;
+        }
+
+        .article-body a {
+            word-break: break-all;
+        }
+
+        .back {
+            display: inline-block;
+            margin-top: 40px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <article>
+
+        <header class="article-header">
+
+            <h1 class="article-title">
+                {{ article.title }}
+            </h1>
+
+            <div class="article-meta">
+
+                {% if article.category %}
+                <span class="category">
+                    カテゴリ:
+                    {{ article.category.name }}
+                </span>
+                {% endif %}
+
+                <span>
+                    更新:
+                    {{ article.updated_at }}
+                </span>
+
+            </div>
+
+            {% if article.tags %}
+            <div class="tags">
+
+                {% for tag in article.tags %}
+                <span class="tag">
+                    {{ tag.name }}
+                </span>
+                {% endfor %}
+
+            </div>
+            {% endif %}
+
+        </header>
+
+
+        <div class="article-body">
+            {{ body_html | safe }}
+        </div>
+
+    </article>
+
+
+    <a
+        class="back"
+        href="/blog"
+    >
+        ← 記事一覧へ
+    </a>
+
+</div>
+
+</body>
+</html>

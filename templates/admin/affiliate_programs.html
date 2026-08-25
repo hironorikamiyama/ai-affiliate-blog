@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>アフィリエイト案件管理</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 1400px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 24px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th {
+            background: #f5f5f5;
+        }
+
+        .actions {
+            margin-bottom: 24px;
+        }
+
+        .nav {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="nav">
+    <a href="/admin/articles">
+        ← 記事管理へ
+    </a>
+</div>
+
+<h1>アフィリエイト案件管理</h1>
+
+<div class="actions">
+    <a href="/admin/affiliate-programs/new">
+        ＋ 新規案件登録
+    </a>
+</div>
+
+{% if programs %}
+
+<table>
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>案件名</th>
+        <th>ASP</th>
+        <th>カテゴリ</th>
+        <th>報酬</th>
+        <th>報酬タイプ</th>
+        <th>ステータス</th>
+        <th>更新日時</th>
+    </tr>
+    </thead>
+
+    <tbody>
+
+    {% for program in programs %}
+
+    <tr>
+        <td>{{ program.id }}</td>
+
+        <td>
+            <a href="/admin/affiliate-programs/{{ program.id }}/edit">
+                {{ program.name }}
+            </a>
+        </td>
+
+        <td>
+            {{ program.asp_name }}
+        </td>
+
+        <td>
+            {{ program.category }}
+        </td>
+
+        <td>
+            {% if program.reward_amount is not none %}
+                {{ program.reward_amount }}
+            {% else %}
+                -
+            {% endif %}
+        </td>
+
+        <td>
+            {{ program.reward_type }}
+        </td>
+
+        <td>
+            {{ program.status }}
+        </td>
+
+        <td>
+            {{ program.updated_at }}
+        </td>
+    </tr>
+
+    {% endfor %}
+
+    </tbody>
+</table>
+
+{% else %}
+
+<p>登録されている案件はありません。</p>
+
+{% endif %}
+
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>記事管理</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 40px;
+        }
+
+        h1 {
+            margin-bottom: 24px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f5f5f5;
+        }
+
+        .status {
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>記事管理</h1>
+
+<p>
+    <a href="/admin/articles/generate">
+        ＋ 新規記事生成
+    </a>
+
+    &nbsp; | &nbsp;
+
+    <a href="/admin/affiliate-programs">
+        アフィリエイト案件管理
+    </a>
+</p>
+
+{% if articles %}
+
+<table>
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>タイトル</th>
+        <th>Slug</th>
+        <th>ステータス</th>
+        <th>カテゴリ</th>
+        <th>更新日時</th>
+    </tr>
+    </thead>
+
+    <tbody>
+
+    {% for article in articles %}
+
+    <tr>
+        <td>{{ article.id }}</td>
+
+        <td>
+            <a href="/admin/articles/{{ article.id }}/edit">
+                {{ article.title }}
+            </a>
+        </td>
+
+        <td>
+            {{ article.slug }}
+        </td>
+
+        <td class="status">
+            {{ article.status }}
+        </td>
+
+        <td>
+            {% if article.category %}
+                {{ article.category.name }}
+            {% else %}
+                -
+            {% endif %}
+        </td>
+
+        <td>
+            {{ article.updated_at }}
+        </td>
+    </tr>
+
+    {% endfor %}
+
+    </tbody>
+</table>
+
+{% else %}
+
+<p>記事はまだありません。</p>
+
+{% endif %}
+
+</body>
+</html>

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>記事編集</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .field {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        input,
+        textarea,
+        select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+        }
+
+        textarea {
+            min-height: 400px;
+            font-family: monospace;
+        }
+
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+
+        .back {
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+
+        .status-section {
+            margin-top: 30px;
+        }
+    </style>
+</head>
+
+<body>
+
+<a
+    class="back"
+    href="/admin/articles"
+>
+    ← 記事一覧へ戻る
+</a>
+
+
+<h1>記事編集</h1>
+
+
+<form
+    method="post"
+    action="/admin/articles/{{ article.id }}/edit"
+>
+
+    <!-- ========================================
+         Title
+         ======================================== -->
+
+    <div class="field">
+
+        <label for="title">
+            タイトル
+        </label>
+
+        <input
+            id="title"
+            name="title"
+            type="text"
+            value="{{ article.title }}"
+            required
+        >
+
+    </div>
+
+
+    <!-- ========================================
+         Slug
+         ======================================== -->
+
+    <div class="field">
+
+        <label for="slug">
+            Slug
+        </label>
+
+        <input
+            id="slug"
+            name="slug"
+            type="text"
+            value="{{ article.slug }}"
+            required
+        >
+
+    </div>
+
+
+    <!-- ========================================
+         Keyword
+         ======================================== -->
+
+    <div class="field">
+
+        <label for="keyword">
+            キーワード
+        </label>
+
+        <input
+            id="keyword"
+            name="keyword"
+            type="text"
+            value="{{ article.keyword }}"
+            required
+        >
+
+    </div>
+
+
+    <!-- ========================================
+         Meta Description
+         ======================================== -->
+
+    <div class="field">
+
+        <label for="meta_description">
+            Meta Description
+        </label>
+
+        <textarea
+            id="meta_description"
+            name="meta_description"
+            style="min-height: 100px;"
+        >{{ article.meta_description or "" }}</textarea>
+
+    </div>
+
+
+    <!-- ========================================
+         Body
+         ======================================== -->
+
+    <div class="field">
+
+        <label for="body">
+            本文
+        </label>
+
+        <textarea
+            id="body"
+            name="body"
+            required
+        >{{ article.body }}</textarea>
+
+    </div>
+
+
+    <!-- ========================================
+         Current Status
+         ======================================== -->
+
+    <div class="field">
+
+        <label>
+            現在のステータス
+        </label>
+
+        <p>
+            <strong>
+                {{ article.status }}
+            </strong>
+        </p>
+
+    </div>
+
+
+    <!-- ========================================
+         Category
+         ======================================== -->
+
+    <div class="field">
+
+        <label for="category_id">
+            カテゴリ
+        </label>
+
+        <select
+            id="category_id"
+            name="category_id"
+        >
+
+            <option value="">
+                未設定
+            </option>
+
+            {% for category in categories %}
+
+                <option
+                    value="{{ category.id }}"
+                    {% if article.category_id == category.id %}
+                    selected
+                    {% endif %}
+                >
+                    {{ category.name }}
+                </option>
+
+            {% endfor %}
+
+        </select>
+
+    </div>
+
+
+    <!-- ========================================
+         Save
+         ======================================== -->
+
+    <button type="submit">
+        保存
+    </button>
+
+</form>
+
+
+<!-- ========================================
+     Publish / Draft
+     ======================================== -->
+
+<hr style="margin: 40px 0;">
+
+
+<div class="field status-section">
+
+    <label>
+        公開状態
+    </label>
+
+
+    {% if article.status == "published" %}
+
+        <p>
+            現在この記事は公開中です。
+        </p>
+
+        <form
+            method="post"
+            action="/admin/articles/{{ article.id }}/draft"
+        >
+
+            <button type="submit">
+                下書きに戻す
+            </button>
+
+        </form>
+
+
+    {% else %}
+
+        <p>
+            現在この記事は下書きです。
+        </p>
+
+        <form
+            method="post"
+            action="/admin/articles/{{ article.id }}/publish"
+        >
+
+            <button type="submit">
+                公開する
+            </button>
+
+        </form>
+
+    {% endif %}
+
+</div>
+
+
+</body>
+</html>
