@@ -6,7 +6,9 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
 
     openai_api_key: str | None = None
-    llm_model: str = "gpt-5.6-mini"
+    llm_model: str = "gpt-5.6-luna"
+
+    use_mock_ai: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

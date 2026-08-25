@@ -16,6 +16,7 @@ from app.schemas.article import (
     ArticleResponse,
     ArticleStatus,
     SimilarArticleResponse,
+    ArticleGenerateRequest,
 )
 
 from app.services.article_similarity import (
@@ -25,6 +26,8 @@ from app.services.article_similarity import (
 from app.services.article_embedding import (
     get_embedding_similar_articles,
 )
+
+from app.services.ai_writer import generate_article
 
 router = APIRouter(
     prefix="/articles",
@@ -341,6 +344,146 @@ def get_article_embedding_similarities(
         limit=limit,
         min_similarity=min_similarity,
     )
+
+
+# ========================================
+# AI GENERATE
+# POST /articles/generate
+# ========================================
+
+@router.post(
+    "/generate",
+    response_model=ArticleResponse,
+)
+def generate_article_draft(
+    request: ArticleGenerateRequest,
+    db: Session = Depends(get_db),
+):
+    # AffiliateProgramの存在確認
+    program = (
+        db.query(AffiliateProgram)
+        .filter(
+            AffiliateProgram.id
+            == request.affiliate_program_id
+        )
+        .first()
+    )
+
+    if program is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Affiliate program not found",
+        )
+
+    # Categoryの存在確認
+    if request.category_id is not None:
+        category = (
+            db.query(Category)
+            .filter(
+                Category.id == request.category_id
+            )
+            .first()
+        )
+
+        if category is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Category not found",
+            )
+
+    # Tagの存在確認
+    tags = []
+
+    if request.tag_ids:
+        unique_tag_ids = list(
+            dict.fromkeys(request.tag_ids)
+        )
+
+        tags = (
+            db.query(Tag)
+            .filter(Tag.id.in_(unique_tag_ids))
+            .all()
+        )
+
+        found_tag_ids = {
+            tag.id for tag in tags
+        }
+
+        missing_tag_ids = [
+            tag_id
+            for tag_id in unique_tag_ids
+            if tag_id not in found_tag_ids
+        ]
+
+        if missing_tag_ids:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Tag not found: {missing_tag_ids}",
+            )
+
+    # AI記事生成
+    try:
+        generated = generate_article(
+            program=program,
+            keyword=request.keyword,
+        )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to generate article: {exc}",
+        ) from exc
+
+    # slug重複確認
+    existing_slug = (
+        db.query(Article)
+        .filter(
+            Article.slug == generated["slug"]
+        )
+        .first()
+    )
+
+    if existing_slug is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Generated article slug already exists",
+        )
+
+    db_article = Article(
+        affiliate_program_id=request.affiliate_program_id,
+        category_id=request.category_id,
+        title=generated["title"],
+        slug=generated["slug"],
+        keyword=request.keyword,
+        meta_description=generated["meta_description"],
+        body=generated["body"],
+        status=ArticleStatus.draft.value,
+    )
+
+    db_article.tags = tags
+
+    try:
+        db.add(db_article)
+        db.commit()
+        db.refresh(db_article)
+
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail="Generated article conflicts with existing data",
+        )
+
+    except SQLAlchemyError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save generated article",
+        )
+
+    return db_article
 
 
 # ========================================

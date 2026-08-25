@@ -146,3 +146,23 @@ class SimilarArticleResponse(BaseModel):
     title: str
     slug: str
     similarity: float
+
+
+class ArticleGenerateRequest(BaseModel):
+    affiliate_program_id: int = Field(
+        ge=1,
+    )
+
+    keyword: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+    category_id: int | None = Field(
+        default=None,
+        ge=1,
+    )
+
+    tag_ids: list[int] = Field(
+        default_factory=list,
+    )
