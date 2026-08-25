@@ -7,8 +7,14 @@ from app.models.article_image import ArticleImage
 
 from app.routers.affiliate import router as affiliate_router
 from app.routers.article import router as article_router
-from app.routers import article_image
+from app.routers.article_image import router as article_image_router
+from app.routers.public_article import router as public_article_router
+from app.routers.category import router as category_router
+from app.routers.tag import router as tag_router
+
+
 from fastapi.staticfiles import StaticFiles
+
 
 Base.metadata.create_all(bind=engine)
 
@@ -25,7 +31,10 @@ app.mount(
 
 app.include_router(affiliate_router)
 app.include_router(article_router)
-app.include_router(article_image.router)
+app.include_router(article_image_router)
+app.include_router(public_article_router)
+app.include_router(category_router)
+app.include_router(tag_router)
 
 @app.get("/health")
 def health_check():

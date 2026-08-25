@@ -10,6 +10,9 @@ from app.db.database import Base
 from app.models.affiliate import AffiliateProgram
 from app.models.article import Article
 from app.models.article_image import ArticleImage
+from app.models.category import Category
+from app.models.tag import Tag
+from app.models.article_tag import article_tags
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

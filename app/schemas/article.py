@@ -4,6 +4,8 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.article_image import ArticleImageResponse
+from app.schemas.category import CategoryResponse
+from app.schemas.tag import TagResponse
 
 
 class ArticleStatus(str, Enum):
@@ -16,6 +18,17 @@ class ArticleStatus(str, Enum):
 
 class ArticleCreate(BaseModel):
     affiliate_program_id: int = Field(ge=1)
+
+    # Categoryは未分類記事も許可
+    category_id: int | None = Field(
+        default=None,
+        ge=1,
+    )
+
+    # Article ↔ Tag は多対多
+    tag_ids: list[int] = Field(
+        default_factory=list,
+    )
 
     title: str = Field(
         min_length=1,
@@ -49,6 +62,15 @@ class ArticleUpdate(BaseModel):
         default=None,
         ge=1,
     )
+
+    # nullを送ればCategory解除も可能
+    category_id: int | None = Field(
+        default=None,
+        ge=1,
+    )
+
+    # []を送ればTag全解除
+    tag_ids: list[int] | None = None
 
     title: str | None = Field(
         default=None,
@@ -85,6 +107,8 @@ class ArticleResponse(BaseModel):
     id: int
     affiliate_program_id: int
 
+    category_id: int | None
+
     title: str
     slug: str
     keyword: str
@@ -94,6 +118,12 @@ class ArticleResponse(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+
+    category: CategoryResponse | None = None
+
+    tags: list[TagResponse] = Field(
+        default_factory=list,
+    )
 
     images: list[ArticleImageResponse] = Field(
         default_factory=list,
@@ -109,6 +139,7 @@ class ArticleListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
 
 class SimilarArticleResponse(BaseModel):
     article_id: int

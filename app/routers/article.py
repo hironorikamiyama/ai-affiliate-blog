@@ -3,8 +3,12 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
+
 from app.models.affiliate import AffiliateProgram
 from app.models.article import Article
+from app.models.category import Category
+from app.models.tag import Tag
+
 from app.schemas.article import (
     ArticleCreate,
     ArticleUpdate,
@@ -57,6 +61,45 @@ def create_article(
             detail="Affiliate program not found",
         )
 
+    # Categoryの存在確認
+    if article.category_id is not None:
+        category = (
+            db.query(Category)
+            .filter(Category.id == article.category_id)
+            .first()
+        )
+
+        if category is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Category not found",
+            )
+
+    # Tagの存在確認
+    tags = []
+
+    if article.tag_ids:
+        unique_tag_ids = list(dict.fromkeys(article.tag_ids))
+
+        tags = (
+            db.query(Tag)
+            .filter(Tag.id.in_(unique_tag_ids))
+            .all()
+        )
+
+        found_tag_ids = {tag.id for tag in tags}
+        missing_tag_ids = [
+            tag_id
+            for tag_id in unique_tag_ids
+            if tag_id not in found_tag_ids
+        ]
+
+        if missing_tag_ids:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Tag not found: {missing_tag_ids}",
+            )
+
     # slug重複確認
     existing_slug = (
         db.query(Article)
@@ -72,6 +115,7 @@ def create_article(
 
     db_article = Article(
         affiliate_program_id=article.affiliate_program_id,
+        category_id=article.category_id,
         title=article.title,
         slug=article.slug,
         keyword=article.keyword,
@@ -79,6 +123,9 @@ def create_article(
         body=article.body,
         status=article.status.value,
     )
+
+    # Many-to-Many
+    db_article.tags = tags
 
     try:
         db.add(db_article)
@@ -102,7 +149,6 @@ def create_article(
         )
 
     return db_article
-
 
 # ========================================
 # LIST
@@ -355,6 +401,9 @@ def update_article(
         exclude_unset=True
     )
 
+    # tag_idsはArticleの通常カラムではないので分離
+    tag_ids = data.pop("tag_ids", None)
+
     # AffiliateProgramを変更する場合は存在確認
     if "affiliate_program_id" in data:
         program = (
@@ -371,6 +420,55 @@ def update_article(
                 status_code=404,
                 detail="Affiliate program not found",
             )
+
+    # Categoryを変更する場合は存在確認
+    if (
+        "category_id" in data
+        and data["category_id"] is not None
+    ):
+        category = (
+            db.query(Category)
+            .filter(
+                Category.id == data["category_id"]
+            )
+            .first()
+        )
+
+        if category is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Category not found",
+            )
+
+    # Tagを変更する場合は存在確認
+    tags = None
+
+    if tag_ids is not None:
+        unique_tag_ids = list(dict.fromkeys(tag_ids))
+
+        if unique_tag_ids:
+            tags = (
+                db.query(Tag)
+                .filter(Tag.id.in_(unique_tag_ids))
+                .all()
+            )
+
+            found_tag_ids = {tag.id for tag in tags}
+            missing_tag_ids = [
+                tag_id
+                for tag_id in unique_tag_ids
+                if tag_id not in found_tag_ids
+            ]
+
+            if missing_tag_ids:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Tag not found: {missing_tag_ids}",
+                )
+
+        else:
+            # tag_ids=[] なら全Tag解除
+            tags = []
 
     # slugを変更する場合は重複確認
     if "slug" in data:
@@ -396,12 +494,17 @@ def update_article(
     ):
         data["status"] = data["status"].value
 
+    # Article通常カラムを更新
     for field, value in data.items():
         setattr(
             article,
             field,
             value,
         )
+
+    # Many-to-Many Tag更新
+    if tags is not None:
+        article.tags = tags
 
     try:
         db.commit()
@@ -424,7 +527,6 @@ def update_article(
         )
 
     return article
-
 
 # ========================================
 # DELETE

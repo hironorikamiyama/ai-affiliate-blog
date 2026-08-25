@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
+from app.models.article_tag import article_tags
 
 
 def utc_now() -> datetime:
@@ -71,6 +72,12 @@ class Article(Base):
         onupdate=utc_now,
     )
 
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id"),
+        nullable=True,
+        index=True,
+    )
+
     affiliate_program = relationship(
         "AffiliateProgram",
         back_populates="articles",
@@ -81,4 +88,15 @@ class Article(Base):
         back_populates="article",
         cascade="all, delete-orphan",
         order_by="ArticleImage.position",
+    )
+
+    category = relationship(
+        "Category",
+        back_populates="articles",
+    )
+
+    tags = relationship(
+        "Tag",
+        secondary=article_tags,
+        back_populates="articles",
     )
