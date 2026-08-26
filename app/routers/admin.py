@@ -1,17 +1,33 @@
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+)
+
+
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db.database import get_db
 from app.models.affiliate import AffiliateProgram
 from app.models.article import Article
+from app.models.article_image import ArticleImage
 from app.models.category import Category
 from app.models.tag import Tag
 from app.services.ai_writer import generate_article
 from app.services.seo_analyzer import analyze_seo
 from app.services.seo_rewriter import rewrite_article_for_seo
+
+from pathlib import Path
+from uuid import uuid4
 
 
 router = APIRouter(
@@ -24,6 +40,26 @@ templates = Jinja2Templates(
     directory="templates"
 )
 
+
+ADMIN_ARTICLE_UPLOAD_DIR = (
+    Path(settings.upload_dir)
+    / "articles"
+)
+
+ADMIN_ARTICLE_UPLOAD_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
+)
+
+ALLOWED_IMAGE_CONTENT_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+MAX_IMAGE_FILE_SIZE = (
+    5 * 1024 * 1024
+)
 
 # ========================================
 # ARTICLE LIST
@@ -91,12 +127,26 @@ def admin_article_edit(
         .all()
     )
 
+    images = (
+        db.query(ArticleImage)
+        .filter(
+            ArticleImage.article_id
+            == article_id
+        )
+        .order_by(
+            ArticleImage.position.asc(),
+            ArticleImage.id.asc(),
+        )
+        .all()
+    )
+
     return templates.TemplateResponse(
         request=request,
         name="admin/article_edit.html",
         context={
             "article": article,
             "categories": categories,
+            "images": images,
             "seo_result": None,
             "rewrite_result": None,
         },
@@ -230,6 +280,363 @@ def admin_article_update(
 
 
 # ========================================
+# Article Image Upload
+# POST /admin/articles/{article_id}/images
+# ========================================
+
+@router.post(
+    "/articles/{article_id}/images",
+)
+async def admin_article_image_upload(
+    article_id: int,
+    file: UploadFile = File(...),
+    alt_text: str = Form(""),
+    caption: str = Form(""),
+    position: int = Form(0),
+    is_featured: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    article = (
+        db.query(Article)
+        .filter(
+            Article.id == article_id
+        )
+        .first()
+    )
+
+    if article is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article not found",
+        )
+
+    if (
+        file.content_type
+        not in ALLOWED_IMAGE_CONTENT_TYPES
+    ):
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                "Only JPEG, PNG, and WebP "
+                "images are allowed"
+            ),
+        )
+
+    try:
+        file_data = await file.read()
+
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to read uploaded image",
+        ) from exc
+
+    if len(file_data) > MAX_IMAGE_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                "Image file is too large. "
+                "Maximum size is 5MB"
+            ),
+        )
+
+    extension = (
+        ALLOWED_IMAGE_CONTENT_TYPES[
+            file.content_type
+        ]
+    )
+
+    stored_filename = (
+        f"{uuid4().hex}{extension}"
+    )
+
+    article_directory = (
+        ADMIN_ARTICLE_UPLOAD_DIR
+        / str(article_id)
+    )
+
+    file_path = (
+        article_directory
+        / stored_filename
+    )
+
+    try:
+        article_directory.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        with open(
+            file_path,
+            "wb",
+        ) as buffer:
+            buffer.write(file_data)
+
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save image file",
+        ) from exc
+
+    try:
+        if is_featured:
+            (
+                db.query(ArticleImage)
+                .filter(
+                    ArticleImage.article_id
+                    == article_id,
+                    ArticleImage.is_featured.is_(
+                        True
+                    ),
+                )
+                .update(
+                    {
+                        ArticleImage.is_featured:
+                        False
+                    },
+                    synchronize_session=False,
+                )
+            )
+
+        image = ArticleImage(
+            article_id=article_id,
+            file_path=str(file_path),
+            original_filename=(
+                file.filename
+                or stored_filename
+            ),
+            alt_text=(
+                alt_text or None
+            ),
+            caption=(
+                caption or None
+            ),
+            position=position,
+            is_featured=is_featured,
+        )
+
+        db.add(image)
+        db.commit()
+
+    except IntegrityError as exc:
+        db.rollback()
+
+        try:
+            if file_path.exists():
+                file_path.unlink()
+
+        except OSError:
+            pass
+
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Article image conflicts "
+                "with existing data"
+            ),
+        ) from exc
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        try:
+            if file_path.exists():
+                file_path.unlink()
+
+        except OSError:
+            pass
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to save article "
+                "image information"
+            ),
+        ) from exc
+
+    return RedirectResponse(
+        url=(
+            f"/admin/articles/"
+            f"{article_id}/edit"
+        ),
+        status_code=303,
+    )
+
+# ========================================
+# Article Image Update
+# POST /admin/articles/{article_id}/images/{image_id}/edit
+# ========================================
+
+@router.post(
+    "/articles/{article_id}/images/{image_id}/edit",
+)
+def admin_article_image_update(
+    article_id: int,
+    image_id: int,
+    alt_text: str = Form(""),
+    caption: str = Form(""),
+    position: int = Form(0),
+    is_featured: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    image = (
+        db.query(ArticleImage)
+        .filter(
+            ArticleImage.id == image_id,
+            ArticleImage.article_id == article_id,
+        )
+        .first()
+    )
+
+    if image is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article image not found",
+        )
+
+    try:
+        if is_featured:
+            (
+                db.query(ArticleImage)
+                .filter(
+                    ArticleImage.article_id
+                    == article_id,
+                    ArticleImage.id
+                    != image_id,
+                    ArticleImage.is_featured.is_(
+                        True
+                    ),
+                )
+                .update(
+                    {
+                        ArticleImage.is_featured:
+                        False
+                    },
+                    synchronize_session=False,
+                )
+            )
+
+        image.alt_text = (
+            alt_text or None
+        )
+
+        image.caption = (
+            caption or None
+        )
+
+        image.position = position
+
+        image.is_featured = (
+            is_featured
+        )
+
+        db.commit()
+        db.refresh(image)
+
+    except IntegrityError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Article image conflicts "
+                "with existing data"
+            ),
+        ) from exc
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to update "
+                "article image"
+            ),
+        ) from exc
+
+    return RedirectResponse(
+        url=(
+            f"/admin/articles/"
+            f"{article_id}/edit"
+        ),
+        status_code=303,
+    )
+
+# ========================================
+# Article Image Delete
+# POST /admin/articles/{article_id}/images/{image_id}/delete
+# ========================================
+
+@router.post(
+    "/articles/{article_id}/images/{image_id}/delete",
+)
+def admin_article_image_delete(
+    article_id: int,
+    image_id: int,
+    db: Session = Depends(get_db),
+):
+    image = (
+        db.query(ArticleImage)
+        .filter(
+            ArticleImage.id == image_id,
+            ArticleImage.article_id == article_id,
+        )
+        .first()
+    )
+
+    if image is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article image not found",
+        )
+
+    file_path = Path(
+        image.file_path
+    )
+
+    try:
+        db.delete(image)
+        db.commit()
+
+    except IntegrityError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Article image is referenced "
+                "by other data"
+            ),
+        ) from exc
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to delete "
+                "article image"
+            ),
+        ) from exc
+
+    try:
+        if file_path.exists():
+            file_path.unlink()
+
+    except OSError:
+        pass
+
+    return RedirectResponse(
+        url=(
+            f"/admin/articles/"
+            f"{article_id}/edit"
+        ),
+        status_code=303,
+    )
+
+# ========================================
 # ARTICLE SEO ANALYSIS
 # POST /admin/articles/{article_id}/seo
 # ========================================
@@ -276,6 +683,19 @@ def admin_article_seo_analysis(
         .all()
     )
 
+    images = (
+        db.query(ArticleImage)
+        .filter(
+            ArticleImage.article_id
+            == article_id
+        )
+        .order_by(
+            ArticleImage.position.asc(),
+            ArticleImage.id.asc(),
+        )
+        .all()
+    )
+
     # ------------------------------------
     # SEO Analysis
     # ------------------------------------
@@ -309,6 +729,7 @@ def admin_article_seo_analysis(
         context={
             "article": article,
             "categories": categories,
+            "images": images,
             "seo_result": seo_result,
             "rewrite_result": None,
         },
@@ -356,6 +777,19 @@ def admin_article_seo_rewrite(
         db.query(Category)
         .order_by(
             Category.name.asc()
+        )
+        .all()
+    )
+
+    images = (
+        db.query(ArticleImage)
+        .filter(
+            ArticleImage.article_id
+            == article_id
+        )
+        .order_by(
+            ArticleImage.position.asc(),
+            ArticleImage.id.asc(),
         )
         .all()
     )
@@ -423,6 +857,7 @@ def admin_article_seo_rewrite(
         context={
             "article": article,
             "categories": categories,
+            "images": images,
             "seo_result": seo_result,
             "rewrite_result": rewrite_result,
         },

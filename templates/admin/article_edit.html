@@ -52,6 +52,62 @@
         }
 
         /* ========================================
+           Article Images
+           ======================================== */
+
+        .image-section {
+            margin-top: 30px;
+        }
+
+        .image-upload {
+            padding: 20px;
+            border: 1px solid #ccc;
+            background: #f7f7f7;
+        }
+
+        .image-list {
+            display: grid;
+            grid-template-columns: repeat(
+                auto-fill,
+                minmax(240px, 1fr)
+            );
+            gap: 20px;
+            margin-top: 24px;
+        }
+
+        .image-card {
+            padding: 16px;
+            border: 1px solid #ccc;
+            background: #fff;
+        }
+
+        .image-card img {
+            display: block;
+            width: 100%;
+            height: 180px;
+            object-fit: contain;
+            margin-bottom: 12px;
+            background: #eee;
+        }
+
+        .image-card p {
+            margin: 6px 0;
+            word-break: break-all;
+        }
+
+        .image-card textarea {
+            min-height: 80px;
+        }
+
+        .featured-label {
+            display: inline-block;
+            margin-bottom: 8px;
+            padding: 4px 8px;
+            background: #eee;
+            font-weight: bold;
+        }
+
+        /* ========================================
            SEO Analysis
            ======================================== */
 
@@ -169,7 +225,6 @@
     ← 記事一覧へ戻る
 </a>
 
-
 <h1>記事編集</h1>
 
 
@@ -181,10 +236,6 @@
     method="post"
     action="/admin/articles/{{ article.id }}/edit"
 >
-
-    <!-- ========================================
-         Title
-         ======================================== -->
 
     <div class="field">
 
@@ -203,10 +254,6 @@
     </div>
 
 
-    <!-- ========================================
-         Slug
-         ======================================== -->
-
     <div class="field">
 
         <label for="slug">
@@ -223,10 +270,6 @@
 
     </div>
 
-
-    <!-- ========================================
-         Keyword
-         ======================================== -->
 
     <div class="field">
 
@@ -245,10 +288,6 @@
     </div>
 
 
-    <!-- ========================================
-         Meta Description
-         ======================================== -->
-
     <div class="field">
 
         <label for="meta_description">
@@ -263,10 +302,6 @@
 
     </div>
 
-
-    <!-- ========================================
-         Body
-         ======================================== -->
 
     <div class="field">
 
@@ -283,10 +318,6 @@
     </div>
 
 
-    <!-- ========================================
-         Current Status
-         ======================================== -->
-
     <div class="field">
 
         <label>
@@ -301,10 +332,6 @@
 
     </div>
 
-
-    <!-- ========================================
-         Category
-         ======================================== -->
 
     <div class="field">
 
@@ -339,10 +366,6 @@
     </div>
 
 
-    <!-- ========================================
-         Save
-         ======================================== -->
-
     <button type="submit">
         保存
     </button>
@@ -351,11 +374,303 @@
 
 
 <!-- ========================================
-     SEO Analysis
+     Article Images
      ======================================== -->
 
 <hr style="margin: 40px 0;">
 
+<div class="field image-section">
+
+    <h2>
+        記事画像
+    </h2>
+
+
+    <!-- ========================================
+         Image Upload
+         ======================================== -->
+
+    <div class="image-upload">
+
+        <h3>
+            画像アップロード
+        </h3>
+
+        <form
+            method="post"
+            action="/admin/articles/{{ article.id }}/images"
+            enctype="multipart/form-data"
+        >
+
+            <div class="field">
+
+                <label for="image_file">
+                    画像
+                </label>
+
+                <input
+                    id="image_file"
+                    name="file"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    required
+                >
+
+                <p>
+                    JPEG / PNG / WebP、最大5MB
+                </p>
+
+            </div>
+
+
+            <div class="field">
+
+                <label for="image_alt_text">
+                    Alt Text
+                </label>
+
+                <input
+                    id="image_alt_text"
+                    name="alt_text"
+                    type="text"
+                    maxlength="500"
+                >
+
+            </div>
+
+
+            <div class="field">
+
+                <label for="image_caption">
+                    キャプション
+                </label>
+
+                <textarea
+                    id="image_caption"
+                    name="caption"
+                    style="min-height: 100px;"
+                ></textarea>
+
+            </div>
+
+
+            <div class="field">
+
+                <label for="image_position">
+                    表示順
+                </label>
+
+                <input
+                    id="image_position"
+                    name="position"
+                    type="number"
+                    value="0"
+                    min="0"
+                >
+
+            </div>
+
+
+            <div class="field">
+
+                <label>
+                    <input
+                        name="is_featured"
+                        type="checkbox"
+                        value="true"
+                        style="width: auto;"
+                    >
+                    アイキャッチ画像にする
+                </label>
+
+            </div>
+
+
+            <button type="submit">
+                画像をアップロード
+            </button>
+
+        </form>
+
+    </div>
+
+
+    <!-- ========================================
+         Registered Images
+         ======================================== -->
+
+    <h3 style="margin-top: 30px;">
+        登録済み画像
+    </h3>
+
+
+    {% if images %}
+
+        <div class="image-list">
+
+            {% for image in images %}
+
+                <div class="image-card">
+
+                    {% if image.is_featured %}
+
+                        <div class="featured-label">
+                            アイキャッチ
+                        </div>
+
+                    {% endif %}
+
+
+                    <!-- ========================================
+                         Image Preview
+                         ======================================== -->
+
+                    <img
+                        src="{{ image.image_url }}"
+                        alt="{{ image.alt_text or '' }}"
+                    >
+
+
+                    <p>
+                        <strong>
+                            ファイル名:
+                        </strong>
+
+                        {{ image.original_filename }}
+                    </p>
+
+
+                    <!-- ========================================
+                         Image Update
+                         ======================================== -->
+
+                    <form
+                        method="post"
+                        action="/admin/articles/{{ article.id }}/images/{{ image.id }}/edit"
+                    >
+
+                        <div class="field">
+
+                            <label
+                                for="image_alt_text_{{ image.id }}"
+                            >
+                                Alt Text
+                            </label>
+
+                            <input
+                                id="image_alt_text_{{ image.id }}"
+                                name="alt_text"
+                                type="text"
+                                value="{{ image.alt_text or '' }}"
+                                maxlength="500"
+                            >
+
+                        </div>
+
+
+                        <div class="field">
+
+                            <label
+                                for="image_caption_{{ image.id }}"
+                            >
+                                キャプション
+                            </label>
+
+                            <textarea
+                                id="image_caption_{{ image.id }}"
+                                name="caption"
+                                style="min-height: 80px;"
+                            >{{ image.caption or '' }}</textarea>
+
+                        </div>
+
+
+                        <div class="field">
+
+                            <label
+                                for="image_position_{{ image.id }}"
+                            >
+                                表示順
+                            </label>
+
+                            <input
+                                id="image_position_{{ image.id }}"
+                                name="position"
+                                type="number"
+                                value="{{ image.position }}"
+                                min="0"
+                            >
+
+                        </div>
+
+
+                        <div class="field">
+
+                            <label>
+
+                                <input
+                                    type="checkbox"
+                                    name="is_featured"
+                                    value="true"
+                                    {% if image.is_featured %}
+                                    checked
+                                    {% endif %}
+                                    style="width: auto;"
+                                >
+
+                                アイキャッチ画像にする
+
+                            </label>
+
+                        </div>
+
+
+                        <button type="submit">
+                            画像情報を更新
+                        </button>
+
+                    </form>
+
+
+                    <!-- ========================================
+                         Image Delete
+                         ======================================== -->
+
+                    <form
+                        method="post"
+                        action="/admin/articles/{{ article.id }}/images/{{ image.id }}/delete"
+                        onsubmit="return confirm('この画像を削除しますか？');"
+                        style="margin-top: 15px;"
+                    >
+
+                        <button type="submit">
+                            画像を削除
+                        </button>
+
+                    </form>
+
+                </div>
+
+            {% endfor %}
+
+        </div>
+
+    {% else %}
+
+        <p>
+            登録されている画像はありません。
+        </p>
+
+    {% endif %}
+
+</div>
+
+
+<!-- ========================================
+     SEO Analysis
+     ======================================== -->
+
+<hr style="margin: 40px 0;">
 
 <div class="field seo-section">
 
@@ -381,20 +696,12 @@
 
         <div class="seo-result">
 
-            <!-- ========================================
-                 Score
-                 ======================================== -->
-
             <div class="seo-score">
                 SEO Score:
                 {{ seo_result.score }}
                 / 100
             </div>
 
-
-            <!-- ========================================
-                 Provider
-                 ======================================== -->
 
             <div class="seo-block">
 
@@ -409,10 +716,6 @@
             </div>
 
 
-            <!-- ========================================
-                 Search Intent
-                 ======================================== -->
-
             <div class="seo-block">
 
                 <h3>
@@ -425,10 +728,6 @@
 
             </div>
 
-
-            <!-- ========================================
-                 Title Suggestion
-                 ======================================== -->
 
             <div class="seo-block">
 
@@ -444,6 +743,7 @@
                     method="post"
                     action="/admin/articles/{{ article.id }}/seo/apply-title"
                 >
+
                     <input
                         type="hidden"
                         name="title_suggestion"
@@ -453,14 +753,11 @@
                     <button type="submit">
                         タイトルへ反映
                     </button>
+
                 </form>
 
             </div>
 
-
-            <!-- ========================================
-                 Meta Description Suggestion
-                 ======================================== -->
 
             <div class="seo-block">
 
@@ -476,6 +773,7 @@
                     method="post"
                     action="/admin/articles/{{ article.id }}/seo/apply-meta-description"
                 >
+
                     <input
                         type="hidden"
                         name="meta_description_suggestion"
@@ -485,14 +783,11 @@
                     <button type="submit">
                         Meta Descriptionへ反映
                     </button>
+
                 </form>
 
             </div>
 
-
-            <!-- ========================================
-                 Warnings
-                 ======================================== -->
 
             <div class="seo-block">
 
@@ -525,10 +820,6 @@
             </div>
 
 
-            <!-- ========================================
-                 Improvements
-                 ======================================== -->
-
             <div class="seo-block">
 
                 <h3>
@@ -560,10 +851,6 @@
             </div>
 
 
-            <!-- ========================================
-                 Missing Topics
-                 ======================================== -->
-
             <div class="seo-block">
 
                 <h3>
@@ -594,10 +881,6 @@
 
             </div>
 
-
-            <!-- ========================================
-                 Metrics
-                 ======================================== -->
 
             <div class="seo-block">
 
@@ -694,7 +977,6 @@
 
 <hr style="margin: 40px 0;">
 
-
 <div class="field rewrite-section">
 
     <h2>
@@ -714,9 +996,11 @@
         method="post"
         action="/admin/articles/{{ article.id }}/seo/rewrite"
     >
+
         <button type="submit">
             SEO改善版を生成
         </button>
+
     </form>
 
 
@@ -724,27 +1008,21 @@
 
         <div class="rewrite-result">
 
-            <!-- ========================================
-                 Rewrite Summary
-                 ======================================== -->
-
             <div class="rewrite-summary">
 
                 <h3>
                     改善結果
                 </h3>
 
+
                 <p>
                     Rewriter:
+
                     <strong>
                         {{ rewrite_result.provider }}
                     </strong>
                 </p>
 
-
-                <!-- ========================================
-                     SEO Score Before / After
-                     ======================================== -->
 
                 <div class="seo-score">
 
@@ -761,6 +1039,7 @@
                     </strong>
 
                     / 100
+
 
                     {% if rewrite_result.score_difference > 0 %}
 
@@ -785,10 +1064,6 @@
                 </div>
 
 
-                <!-- ========================================
-                     Body Length Before / After
-                     ======================================== -->
-
                 <p>
                     本文文字数:
 
@@ -802,10 +1077,12 @@
                         {{ rewrite_result.rewritten_length }}
                     </strong>
 
+
                     {% set length_difference =
                         rewrite_result.rewritten_length
                         - rewrite_result.original_length
                     %}
+
 
                     {% if length_difference > 0 %}
 
@@ -824,15 +1101,12 @@
                 </p>
 
 
-                <!-- ========================================
-                     Added Topics
-                     ======================================== -->
-
                 <div class="rewrite-topics">
 
                     <strong>
                         追加トピック:
                     </strong>
+
 
                     {% if rewrite_result.added_topics %}
 
@@ -860,10 +1134,6 @@
 
             </div>
 
-
-            <!-- ========================================
-                 Original / Rewritten Comparison
-                 ======================================== -->
 
             <div class="rewrite-columns">
 
@@ -897,11 +1167,7 @@
             </div>
 
 
-            <!-- ========================================
-                 Apply SEO Rewrite
-                 ======================================== -->
-
-        <div class="rewrite-apply">
+            <div class="rewrite-apply">
 
                 {% if rewrite_result.rewritten_body != rewrite_result.original_body %}
 
@@ -911,10 +1177,10 @@
                         onsubmit="return confirm('SEO改善版を本文へ反映しますか？');"
                     >
 
-                    <textarea
-                        name="rewritten_body"
-                        style="display: none;"
-                    >   {{ rewrite_result.rewritten_body }}</textarea>
+                        <textarea
+                            name="rewritten_body"
+                            style="display: none;"
+                        >{{ rewrite_result.rewritten_body }}</textarea>
 
                         <button type="submit">
                             SEO改善版を採用
@@ -932,7 +1198,6 @@
 
             </div>
 
-
         </div>
 
     {% endif %}
@@ -945,7 +1210,6 @@
      ======================================== -->
 
 <hr style="margin: 40px 0;">
-
 
 <div class="field status-section">
 
