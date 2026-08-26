@@ -148,6 +148,10 @@
             margin-top: 12px;
         }
 
+        .rewrite-apply {
+            margin-top: 24px;
+        }
+
         @media (max-width: 800px) {
             .rewrite-columns {
                 grid-template-columns: 1fr;
@@ -355,7 +359,9 @@
 
 <div class="field seo-section">
 
-    <h2>SEO分析</h2>
+    <h2>
+        SEO分析
+    </h2>
 
     <p>
         保存済みの記事内容を対象にSEO分析を実行します。
@@ -735,25 +741,92 @@
                     </strong>
                 </p>
 
-                <p>
-                    SEO Score（改善前）:
+
+                <!-- ========================================
+                     SEO Score Before / After
+                     ======================================== -->
+
+                <div class="seo-score">
+
+                    SEO Score:
+
                     <strong>
                         {{ rewrite_result.seo_score_before }}
-                        / 100
                     </strong>
-                </p>
+
+                    →
+
+                    <strong>
+                        {{ rewrite_result.seo_score_after }}
+                    </strong>
+
+                    / 100
+
+                    {% if rewrite_result.score_difference > 0 %}
+
+                        <span>
+                            （+{{ rewrite_result.score_difference }}）
+                        </span>
+
+                    {% elif rewrite_result.score_difference < 0 %}
+
+                        <span>
+                            （{{ rewrite_result.score_difference }}）
+                        </span>
+
+                    {% else %}
+
+                        <span>
+                            （±0）
+                        </span>
+
+                    {% endif %}
+
+                </div>
+
+
+                <!-- ========================================
+                     Body Length Before / After
+                     ======================================== -->
 
                 <p>
                     本文文字数:
+
                     <strong>
                         {{ rewrite_result.original_length }}
                     </strong>
+
                     →
+
                     <strong>
                         {{ rewrite_result.rewritten_length }}
                     </strong>
+
+                    {% set length_difference =
+                        rewrite_result.rewritten_length
+                        - rewrite_result.original_length
+                    %}
+
+                    {% if length_difference > 0 %}
+
+                        （+{{ length_difference }}）
+
+                    {% elif length_difference < 0 %}
+
+                        （{{ length_difference }}）
+
+                    {% else %}
+
+                        （±0）
+
+                    {% endif %}
+
                 </p>
 
+
+                <!-- ========================================
+                     Added Topics
+                     ======================================== -->
 
                 <div class="rewrite-topics">
 
@@ -807,26 +880,6 @@
 
                 </div>
 
-                <div style="margin-top: 24px;">
-
-                    <form
-                        method="post"
-                        action="/admin/articles/{{ article.id }}/seo/rewrite/apply"
-                        onsubmit="return confirm('SEO改善版を本文へ反映しますか？');"
-                    >
-
-                        <textarea
-                            name="rewritten_body"
-                            style="display: none;"
-                        >{{ rewrite_result.rewritten_body }}</textarea>
-
-                        <button type="submit">
-                            SEO改善版を採用
-                        </button>
-
-                    </form>
-
-                </div>
 
                 <div class="rewrite-column">
 
@@ -844,18 +897,41 @@
             </div>
 
 
-            <!--
-                現段階では採用処理を実装しない。
+            <!-- ========================================
+                 Apply SEO Rewrite
+                 ======================================== -->
 
-                次工程で、
+        <div class="rewrite-apply">
 
-                POST
-                /admin/articles/{article_id}/seo/rewrite/apply
+                {% if rewrite_result.rewritten_body != rewrite_result.original_body %}
 
-                を追加し、
-                管理者が明示的に採用した場合のみ
-                Article.body を更新する。
-            -->
+                    <form
+                        method="post"
+                        action="/admin/articles/{{ article.id }}/seo/rewrite/apply"
+                        onsubmit="return confirm('SEO改善版を本文へ反映しますか？');"
+                    >
+
+                    <textarea
+                        name="rewritten_body"
+                        style="display: none;"
+                    >   {{ rewrite_result.rewritten_body }}</textarea>
+
+                        <button type="submit">
+                            SEO改善版を採用
+                        </button>
+
+                    </form>
+
+                {% else %}
+
+                    <p>
+                        現在の本文に追加のSEO改善はありません。
+                    </p>
+
+                {% endif %}
+
+            </div>
+
 
         </div>
 

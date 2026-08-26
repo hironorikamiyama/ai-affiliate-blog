@@ -456,14 +456,20 @@ def admin_article_apply_seo_rewrite(
             detail="Article not found",
         )
 
-    rewritten_body = (
-        rewritten_body.strip()
-    )
+    rewritten_body = rewritten_body.strip()
 
     if not rewritten_body:
         raise HTTPException(
             status_code=400,
             detail="Rewritten body is empty",
+        )
+
+    current_body = article.body.strip()
+
+    if rewritten_body == current_body:
+        return RedirectResponse(
+            url=f"/admin/articles/{article.id}/edit",
+            status_code=303,
         )
 
     article.body = rewritten_body
