@@ -10,6 +10,7 @@ from app.models.article import Article
 from app.models.category import Category
 from app.models.tag import Tag
 from app.services.ai_writer import generate_article
+from app.services.seo_analyzer import analyze_seo
 
 
 router = APIRouter(
@@ -95,6 +96,7 @@ def admin_article_edit(
         context={
             "article": article,
             "categories": categories,
+            "seo_result": None,
         },
     )
 
@@ -222,6 +224,91 @@ def admin_article_update(
     return RedirectResponse(
         url=f"/admin/articles/{article.id}/edit",
         status_code=303,
+    )
+
+
+# ========================================
+# ARTICLE SEO ANALYSIS
+# POST /admin/articles/{article_id}/seo
+# ========================================
+
+@router.post(
+    "/articles/{article_id}/seo",
+    response_class=HTMLResponse,
+)
+def admin_article_seo_analysis(
+    article_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    # ------------------------------------
+    # Article
+    # ------------------------------------
+
+    article = (
+        db.query(Article)
+        .filter(
+            Article.id == article_id
+        )
+        .first()
+    )
+
+    if article is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article not found",
+        )
+
+    # ------------------------------------
+    # Categories
+    #
+    # SEO分析後も同じ編集画面を
+    # 再表示するため必要
+    # ------------------------------------
+
+    categories = (
+        db.query(Category)
+        .order_by(
+            Category.name.asc()
+        )
+        .all()
+    )
+
+    # ------------------------------------
+    # SEO Analysis
+    # ------------------------------------
+
+    try:
+        seo_result = analyze_seo(
+            title=article.title,
+            keyword=article.keyword,
+            meta_description=(
+                article.meta_description
+            ),
+            body=article.body,
+        )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to analyze SEO: "
+                f"{exc}"
+            ),
+        ) from exc
+
+    # ------------------------------------
+    # Return edit page
+    # ------------------------------------
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/article_edit.html",
+        context={
+            "article": article,
+            "categories": categories,
+            "seo_result": seo_result,
+        },
     )
 
 

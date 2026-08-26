@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-5.6-luna"
 
     use_mock_ai: bool = True
+    seo_provider: str = "mock"
 
     model_config = SettingsConfigDict(
         env_file=".env",

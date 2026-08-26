@@ -50,6 +50,56 @@
         .status-section {
             margin-top: 30px;
         }
+
+        /* ========================================
+           SEO
+           ======================================== */
+
+        .seo-section {
+            margin-top: 30px;
+        }
+
+        .seo-result {
+            margin-top: 24px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            background: #f7f7f7;
+        }
+
+        .seo-score {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .seo-block {
+            margin-bottom: 24px;
+        }
+
+        .seo-block h3 {
+            margin-bottom: 8px;
+        }
+
+        .seo-block ul {
+            margin-top: 8px;
+        }
+
+        .seo-metrics {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .seo-metrics th,
+        .seo-metrics td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+
+        .seo-metrics th {
+            width: 260px;
+            background: #eee;
+        }
     </style>
 </head>
 
@@ -65,6 +115,10 @@
 
 <h1>記事編集</h1>
 
+
+<!-- ========================================
+     Article Edit
+     ======================================== -->
 
 <form
     method="post"
@@ -237,6 +291,312 @@
     </button>
 
 </form>
+
+
+<!-- ========================================
+     SEO Analysis
+     ======================================== -->
+
+<hr style="margin: 40px 0;">
+
+
+<div class="field seo-section">
+
+    <h2>SEO分析</h2>
+
+    <p>
+        保存済みの記事内容を対象にSEO分析を実行します。
+    </p>
+
+    <form
+        method="post"
+        action="/admin/articles/{{ article.id }}/seo"
+    >
+        <button type="submit">
+            SEO分析を実行
+        </button>
+    </form>
+
+
+    {% if seo_result %}
+
+        <div class="seo-result">
+
+            <!-- ========================================
+                 Score
+                 ======================================== -->
+
+            <div class="seo-score">
+                SEO Score:
+                {{ seo_result.score }}
+                / 100
+            </div>
+
+
+            <!-- ========================================
+                 Provider
+                 ======================================== -->
+
+            <div class="seo-block">
+
+                <h3>
+                    Analyzer
+                </h3>
+
+                <p>
+                    {{ seo_result.provider }}
+                </p>
+
+            </div>
+
+
+            <!-- ========================================
+                 Search Intent
+                 ======================================== -->
+
+            <div class="seo-block">
+
+                <h3>
+                    検索意図
+                </h3>
+
+                <p>
+                    {{ seo_result.search_intent }}
+                </p>
+
+            </div>
+
+
+            <!-- ========================================
+                 Title Suggestion
+                 ======================================== -->
+
+            <div class="seo-block">
+
+                <h3>
+                    タイトル改善案
+                </h3>
+
+                <p>
+                    {{ seo_result.title_suggestion }}
+                </p>
+
+            </div>
+
+
+            <!-- ========================================
+                 Meta Description Suggestion
+                 ======================================== -->
+
+            <div class="seo-block">
+
+                <h3>
+                    Meta Description改善案
+                </h3>
+
+                <p>
+                    {{ seo_result.meta_description_suggestion }}
+                </p>
+
+            </div>
+
+
+            <!-- ========================================
+                 Warnings
+                 ======================================== -->
+
+            <div class="seo-block">
+
+                <h3>
+                    警告
+                </h3>
+
+                {% if seo_result.warnings %}
+
+                    <ul>
+
+                        {% for warning in seo_result.warnings %}
+
+                            <li>
+                                {{ warning }}
+                            </li>
+
+                        {% endfor %}
+
+                    </ul>
+
+                {% else %}
+
+                    <p>
+                        警告はありません。
+                    </p>
+
+                {% endif %}
+
+            </div>
+
+
+            <!-- ========================================
+                 Improvements
+                 ======================================== -->
+
+            <div class="seo-block">
+
+                <h3>
+                    改善案
+                </h3>
+
+                {% if seo_result.improvements %}
+
+                    <ul>
+
+                        {% for improvement in seo_result.improvements %}
+
+                            <li>
+                                {{ improvement }}
+                            </li>
+
+                        {% endfor %}
+
+                    </ul>
+
+                {% else %}
+
+                    <p>
+                        改善案はありません。
+                    </p>
+
+                {% endif %}
+
+            </div>
+
+
+            <!-- ========================================
+                 Missing Topics
+                 ======================================== -->
+
+            <div class="seo-block">
+
+                <h3>
+                    不足トピック
+                </h3>
+
+                {% if seo_result.missing_topics %}
+
+                    <ul>
+
+                        {% for topic in seo_result.missing_topics %}
+
+                            <li>
+                                {{ topic }}
+                            </li>
+
+                        {% endfor %}
+
+                    </ul>
+
+                {% else %}
+
+                    <p>
+                        大きな不足トピックはありません。
+                    </p>
+
+                {% endif %}
+
+            </div>
+
+
+            <!-- ========================================
+                 Metrics
+                 ======================================== -->
+
+            <div class="seo-block">
+
+                <h3>
+                    分析値
+                </h3>
+
+                <table class="seo-metrics">
+
+                    <tr>
+                        <th>
+                            タイトル文字数
+                        </th>
+
+                        <td>
+                            {{ seo_result.metrics.title_length }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>
+                            Meta Description文字数
+                        </th>
+
+                        <td>
+                            {{ seo_result.metrics.meta_description_length }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>
+                            本文文字数
+                        </th>
+
+                        <td>
+                            {{ seo_result.metrics.body_length }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>
+                            キーワード出現回数
+                        </th>
+
+                        <td>
+                            {{ seo_result.metrics.keyword_count }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>
+                            H2見出し数
+                        </th>
+
+                        <td>
+                            {{ seo_result.metrics.h2_count }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>
+                            H3見出し数
+                        </th>
+
+                        <td>
+                            {{ seo_result.metrics.h3_count }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>
+                            アフィリエイトリンク数
+                        </th>
+
+                        <td>
+                            {{ seo_result.metrics.affiliate_link_count }}
+                        </td>
+                    </tr>
+
+                </table>
+
+            </div>
+
+        </div>
+
+    {% endif %}
+
+</div>
 
 
 <!-- ========================================
