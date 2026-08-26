@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.article import Article
+from app.models.article_image import ArticleImage
 from app.services.affiliate_link_renderer import (
     expand_affiliate_links,
 )
@@ -93,6 +94,26 @@ def blog_article_detail(
         )
 
     # ====================================
+    # Featured Image
+    # ====================================
+
+    featured_image = (
+        db.query(ArticleImage)
+        .filter(
+            ArticleImage.article_id
+            == article.id,
+            ArticleImage.is_featured.is_(
+                True
+            ),
+        )
+        .order_by(
+            ArticleImage.position.asc(),
+            ArticleImage.id.asc(),
+        )
+        .first()
+    )
+
+    # ====================================
     # Affiliate link expansion
     # ====================================
 
@@ -119,5 +140,6 @@ def blog_article_detail(
         context={
             "article": article,
             "body_html": body_html,
+            "featured_image": featured_image,
         },
     )

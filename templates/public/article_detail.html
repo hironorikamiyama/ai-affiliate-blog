@@ -2,7 +2,10 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
 
     <title>{{ article.title }}</title>
 
@@ -29,6 +32,10 @@
             background: #fff;
             min-height: 100vh;
         }
+
+        /* ========================================
+           Article Header
+           ======================================== */
 
         .article-header {
             margin-bottom: 32px;
@@ -63,6 +70,34 @@
             font-size: 0.85rem;
         }
 
+        /* ========================================
+           Featured Image
+           ======================================== */
+
+        .featured-image {
+            margin: 32px 0;
+        }
+
+        .featured-image img {
+            display: block;
+            width: 100%;
+            max-height: 520px;
+            object-fit: contain;
+            background: #f3f3f3;
+        }
+
+        .featured-image-caption {
+            margin-top: 8px;
+            margin-bottom: 0;
+            color: #666;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+
+        /* ========================================
+           Article Body
+           ======================================== */
+
         .article-body {
             margin-top: 32px;
         }
@@ -82,9 +117,35 @@
             word-break: break-all;
         }
 
+        /* ========================================
+           Back
+           ======================================== */
+
         .back {
             display: inline-block;
             margin-top: 40px;
+        }
+
+        /* ========================================
+           Responsive
+           ======================================== */
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 24px 16px;
+            }
+
+            .article-title {
+                font-size: 1.6rem;
+            }
+
+            .featured-image {
+                margin: 24px 0;
+            }
+
+            .featured-image img {
+                max-height: none;
+            }
         }
     </style>
 </head>
@@ -95,6 +156,10 @@
 
     <article>
 
+        <!-- ========================================
+             Article Header
+             ======================================== -->
+
         <header class="article-header">
 
             <h1 class="article-title">
@@ -104,10 +169,12 @@
             <div class="article-meta">
 
                 {% if article.category %}
+
                 <span class="category">
                     カテゴリ:
                     {{ article.category.name }}
                 </span>
+
                 {% endif %}
 
                 <span>
@@ -117,20 +184,57 @@
 
             </div>
 
+
             {% if article.tags %}
+
             <div class="tags">
 
                 {% for tag in article.tags %}
+
                 <span class="tag">
                     {{ tag.name }}
                 </span>
+
                 {% endfor %}
 
             </div>
+
             {% endif %}
 
         </header>
 
+
+        <!-- ========================================
+             Featured Image
+             ======================================== -->
+
+        {% if featured_image %}
+
+        <figure class="featured-image">
+
+            <img
+                src="{{ featured_image.image_url }}"
+                alt="{{ featured_image.alt_text or article.title }}"
+            >
+
+            {% if featured_image.caption %}
+
+            <figcaption
+                class="featured-image-caption"
+            >
+                {{ featured_image.caption }}
+            </figcaption>
+
+            {% endif %}
+
+        </figure>
+
+        {% endif %}
+
+
+        <!-- ========================================
+             Article Body
+             ======================================== -->
 
         <div class="article-body">
             {{ body_html | safe }}
