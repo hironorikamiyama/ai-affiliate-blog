@@ -10,6 +10,7 @@ class Settings(BaseSettings):
 
     use_mock_ai: bool = True
     seo_provider: str = "mock"
+    seo_rewriter_provider: str = "mock"
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -52,7 +52,7 @@
         }
 
         /* ========================================
-           SEO
+           SEO Analysis
            ======================================== */
 
         .seo-section {
@@ -99,6 +99,59 @@
         .seo-metrics th {
             width: 260px;
             background: #eee;
+        }
+
+        /* ========================================
+           SEO Rewrite
+           ======================================== */
+
+        .rewrite-section {
+            margin-top: 30px;
+        }
+
+        .rewrite-result {
+            margin-top: 24px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            background: #f7f7f7;
+        }
+
+        .rewrite-summary {
+            margin-bottom: 24px;
+        }
+
+        .rewrite-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .rewrite-column {
+            min-width: 0;
+        }
+
+        .rewrite-column h3 {
+            margin-top: 0;
+        }
+
+        .rewrite-body {
+            width: 100%;
+            min-height: 500px;
+            box-sizing: border-box;
+            padding: 12px;
+            font-family: monospace;
+            line-height: 1.6;
+            resize: vertical;
+        }
+
+        .rewrite-topics {
+            margin-top: 12px;
+        }
+
+        @media (max-width: 800px) {
+            .rewrite-columns {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -381,6 +434,21 @@
                     {{ seo_result.title_suggestion }}
                 </p>
 
+                <form
+                    method="post"
+                    action="/admin/articles/{{ article.id }}/seo/apply-title"
+                >
+                    <input
+                        type="hidden"
+                        name="title_suggestion"
+                        value="{{ seo_result.title_suggestion }}"
+                    >
+
+                    <button type="submit">
+                        タイトルへ反映
+                    </button>
+                </form>
+
             </div>
 
 
@@ -397,6 +465,21 @@
                 <p>
                     {{ seo_result.meta_description_suggestion }}
                 </p>
+
+                <form
+                    method="post"
+                    action="/admin/articles/{{ article.id }}/seo/apply-meta-description"
+                >
+                    <input
+                        type="hidden"
+                        name="meta_description_suggestion"
+                        value="{{ seo_result.meta_description_suggestion }}"
+                    >
+
+                    <button type="submit">
+                        Meta Descriptionへ反映
+                    </button>
+                </form>
 
             </div>
 
@@ -591,6 +674,188 @@
                 </table>
 
             </div>
+
+        </div>
+
+    {% endif %}
+
+</div>
+
+
+<!-- ========================================
+     SEO Rewrite
+     ======================================== -->
+
+<hr style="margin: 40px 0;">
+
+
+<div class="field rewrite-section">
+
+    <h2>
+        本文SEO改善
+    </h2>
+
+    <p>
+        保存済みの記事本文をもとに、
+        SEO改善版を生成します。
+    </p>
+
+    <p>
+        この操作だけでは記事本文は変更されません。
+    </p>
+
+    <form
+        method="post"
+        action="/admin/articles/{{ article.id }}/seo/rewrite"
+    >
+        <button type="submit">
+            SEO改善版を生成
+        </button>
+    </form>
+
+
+    {% if rewrite_result %}
+
+        <div class="rewrite-result">
+
+            <!-- ========================================
+                 Rewrite Summary
+                 ======================================== -->
+
+            <div class="rewrite-summary">
+
+                <h3>
+                    改善結果
+                </h3>
+
+                <p>
+                    Rewriter:
+                    <strong>
+                        {{ rewrite_result.provider }}
+                    </strong>
+                </p>
+
+                <p>
+                    SEO Score（改善前）:
+                    <strong>
+                        {{ rewrite_result.seo_score_before }}
+                        / 100
+                    </strong>
+                </p>
+
+                <p>
+                    本文文字数:
+                    <strong>
+                        {{ rewrite_result.original_length }}
+                    </strong>
+                    →
+                    <strong>
+                        {{ rewrite_result.rewritten_length }}
+                    </strong>
+                </p>
+
+
+                <div class="rewrite-topics">
+
+                    <strong>
+                        追加トピック:
+                    </strong>
+
+                    {% if rewrite_result.added_topics %}
+
+                        <ul>
+
+                            {% for topic in rewrite_result.added_topics %}
+
+                                <li>
+                                    {{ topic }}
+                                </li>
+
+                            {% endfor %}
+
+                        </ul>
+
+                    {% else %}
+
+                        <p>
+                            追加されたトピックはありません。
+                        </p>
+
+                    {% endif %}
+
+                </div>
+
+            </div>
+
+
+            <!-- ========================================
+                 Original / Rewritten Comparison
+                 ======================================== -->
+
+            <div class="rewrite-columns">
+
+                <div class="rewrite-column">
+
+                    <h3>
+                        現在の本文
+                    </h3>
+
+                    <textarea
+                        class="rewrite-body"
+                        readonly
+                    >{{ rewrite_result.original_body }}</textarea>
+
+                </div>
+
+                <div style="margin-top: 24px;">
+
+                    <form
+                        method="post"
+                        action="/admin/articles/{{ article.id }}/seo/rewrite/apply"
+                        onsubmit="return confirm('SEO改善版を本文へ反映しますか？');"
+                    >
+
+                        <textarea
+                            name="rewritten_body"
+                            style="display: none;"
+                        >{{ rewrite_result.rewritten_body }}</textarea>
+
+                        <button type="submit">
+                            SEO改善版を採用
+                        </button>
+
+                    </form>
+
+                </div>
+
+                <div class="rewrite-column">
+
+                    <h3>
+                        SEO改善版
+                    </h3>
+
+                    <textarea
+                        class="rewrite-body"
+                        readonly
+                    >{{ rewrite_result.rewritten_body }}</textarea>
+
+                </div>
+
+            </div>
+
+
+            <!--
+                現段階では採用処理を実装しない。
+
+                次工程で、
+
+                POST
+                /admin/articles/{article_id}/seo/rewrite/apply
+
+                を追加し、
+                管理者が明示的に採用した場合のみ
+                Article.body を更新する。
+            -->
 
         </div>
 

@@ -11,6 +11,7 @@ from app.models.category import Category
 from app.models.tag import Tag
 from app.services.ai_writer import generate_article
 from app.services.seo_analyzer import analyze_seo
+from app.services.seo_rewriter import rewrite_article_for_seo
 
 
 router = APIRouter(
@@ -97,6 +98,7 @@ def admin_article_edit(
             "article": article,
             "categories": categories,
             "seo_result": None,
+            "rewrite_result": None,
         },
     )
 
@@ -308,9 +310,286 @@ def admin_article_seo_analysis(
             "article": article,
             "categories": categories,
             "seo_result": seo_result,
+            "rewrite_result": None,
         },
     )
 
+# ========================================
+# ARTICLE SEO REWRITE
+# POST /admin/articles/{article_id}/seo/rewrite
+# ========================================
+
+@router.post(
+    "/articles/{article_id}/seo/rewrite",
+    response_class=HTMLResponse,
+)
+def admin_article_seo_rewrite(
+    article_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    # ------------------------------------
+    # Article
+    # ------------------------------------
+
+    article = (
+        db.query(Article)
+        .filter(
+            Article.id == article_id
+        )
+        .first()
+    )
+
+    if article is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article not found",
+        )
+
+    # ------------------------------------
+    # Categories
+    #
+    # 同じ編集画面を再表示するため必要
+    # ------------------------------------
+
+    categories = (
+        db.query(Category)
+        .order_by(
+            Category.name.asc()
+        )
+        .all()
+    )
+
+    # ------------------------------------
+    # SEO Analysis
+    #
+    # リライト結果と一緒に
+    # SEO分析結果も再表示する
+    # ------------------------------------
+
+    try:
+        seo_result = analyze_seo(
+            title=article.title,
+            keyword=article.keyword,
+            meta_description=(
+                article.meta_description
+            ),
+            body=article.body,
+        )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to analyze SEO: "
+                f"{exc}"
+            ),
+        ) from exc
+
+    # ------------------------------------
+    # SEO Rewrite
+    #
+    # DBは更新しない
+    # ------------------------------------
+
+    try:
+        rewrite_result = (
+            rewrite_article_for_seo(
+                title=article.title,
+                keyword=article.keyword,
+                meta_description=(
+                    article.meta_description
+                ),
+                body=article.body,
+            )
+        )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to rewrite article: "
+                f"{exc}"
+            ),
+        ) from exc
+
+    # ------------------------------------
+    # Return edit page
+    # ------------------------------------
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/article_edit.html",
+        context={
+            "article": article,
+            "categories": categories,
+            "seo_result": seo_result,
+            "rewrite_result": rewrite_result,
+        },
+    )
+
+
+# ========================================
+# APPLY SEO REWRITE
+# POST /admin/articles/{article_id}/seo/rewrite/apply
+# ========================================
+
+@router.post(
+    "/articles/{article_id}/seo/rewrite/apply",
+)
+def admin_article_apply_seo_rewrite(
+    article_id: int,
+    rewritten_body: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    article = (
+        db.query(Article)
+        .filter(
+            Article.id == article_id
+        )
+        .first()
+    )
+
+    if article is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article not found",
+        )
+
+    rewritten_body = (
+        rewritten_body.strip()
+    )
+
+    if not rewritten_body:
+        raise HTTPException(
+            status_code=400,
+            detail="Rewritten body is empty",
+        )
+
+    article.body = rewritten_body
+
+    try:
+        db.commit()
+        db.refresh(article)
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to apply SEO rewrite",
+        ) from exc
+
+    return RedirectResponse(
+        url=f"/admin/articles/{article.id}/edit",
+        status_code=303,
+    )
+
+
+@router.post(
+    "/articles/{article_id}/seo/apply-title",
+)
+def admin_article_apply_seo_title(
+    article_id: int,
+    title_suggestion: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    article = (
+        db.query(Article)
+        .filter(
+            Article.id == article_id
+        )
+        .first()
+    )
+
+    if article is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article not found",
+        )
+
+    title_suggestion = (
+        title_suggestion.strip()
+    )
+
+    if not title_suggestion:
+        raise HTTPException(
+            status_code=400,
+            detail="Title suggestion is empty",
+        )
+
+    article.title = title_suggestion
+
+    try:
+        db.commit()
+        db.refresh(article)
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to apply SEO title",
+        ) from exc
+
+    return RedirectResponse(
+        url=f"/admin/articles/{article.id}/edit",
+        status_code=303,
+    )
+
+
+@router.post(
+    "/articles/{article_id}/seo/apply-meta-description",
+)
+def admin_article_apply_seo_meta_description(
+    article_id: int,
+    meta_description_suggestion: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    article = (
+        db.query(Article)
+        .filter(
+            Article.id == article_id
+        )
+        .first()
+    )
+
+    if article is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article not found",
+        )
+
+    meta_description_suggestion = (
+        meta_description_suggestion.strip()
+    )
+
+    if not meta_description_suggestion:
+        raise HTTPException(
+            status_code=400,
+            detail="Meta Description suggestion is empty",
+        )
+
+    article.meta_description = (
+        meta_description_suggestion
+    )
+
+    try:
+        db.commit()
+        db.refresh(article)
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to apply SEO Meta Description",
+        ) from exc
+
+    return RedirectResponse(
+        url=f"/admin/articles/{article.id}/edit",
+        status_code=303,
+    )
 
 # ========================================
 # PUBLISH ARTICLE
