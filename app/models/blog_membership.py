@@ -1,22 +1,38 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean,
     DateTime,
     ForeignKey,
     String,
-    Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
 
 
-class SiteSetting(Base):
-    __tablename__ = "site_settings"
+class BlogMembership(Base):
+    __tablename__ = "blog_memberships"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "blog_id",
+            name="uq_blog_memberships_user_blog",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(
         primary_key=True,
+        index=True,
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
         index=True,
     )
 
@@ -26,35 +42,13 @@ class SiteSetting(Base):
             ondelete="CASCADE",
         ),
         nullable=False,
-        unique=True,
         index=True,
     )
 
-    site_name: Mapped[str] = mapped_column(
-        String(200),
+    role: Mapped[str] = mapped_column(
+        String(50),
         nullable=False,
-        default="AI Affiliate Blog",
-    )
-
-    site_description: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-    )
-
-    site_url: Mapped[str | None] = mapped_column(
-        String(500),
-        nullable=True,
-    )
-
-    default_og_image: Mapped[str | None] = mapped_column(
-        String(500),
-        nullable=True,
-    )
-
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True,
+        default="editor",
     )
 
     created_at: Mapped[datetime] = mapped_column(

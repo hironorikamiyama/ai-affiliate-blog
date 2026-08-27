@@ -2,7 +2,12 @@ from pathlib import Path
 
 import markdown
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+)
 
 from fastapi.responses import (
     HTMLResponse,
@@ -15,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.article import Article
 from app.models.article_image import ArticleImage
+from app.models.blog import Blog
 from app.models.site_setting import SiteSetting
 
 from app.services.affiliate_link_renderer import (
@@ -34,11 +40,71 @@ router = APIRouter(
 # Templates
 # ========================================
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = (
+    Path(__file__)
+    .resolve()
+    .parent
+    .parent
+    .parent
+)
 
 templates = Jinja2Templates(
-    directory=str(BASE_DIR / "templates")
+    directory=str(
+        BASE_DIR / "templates"
+    )
 )
+
+
+# ========================================
+# CURRENT PUBLIC BLOG
+# ========================================
+
+def get_current_public_blog(
+    db: Session,
+) -> Blog | None:
+    """
+    現在公開対象となっている
+    有効なブログを取得する。
+
+    現段階では有効なブログのうち
+    IDが最も小さいものを使用する。
+    """
+
+    return (
+        db.query(Blog)
+        .filter(
+            Blog.is_active.is_(True)
+        )
+        .order_by(
+            Blog.id.asc()
+        )
+        .first()
+    )
+
+
+def get_site_setting(
+    db: Session,
+    blog_id: int,
+) -> SiteSetting | None:
+    """
+    指定ブログの有効な
+    SiteSettingを取得する。
+    """
+
+    return (
+        db.query(SiteSetting)
+        .filter(
+            SiteSetting.blog_id
+            == blog_id,
+            SiteSetting.is_active.is_(
+                True
+            ),
+        )
+        .order_by(
+            SiteSetting.id.asc()
+        )
+        .first()
+    )
 
 
 # ========================================
@@ -54,10 +120,33 @@ def blog_article_list(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    # ------------------------------------
+    # Current Blog
+    # ------------------------------------
+
+    current_blog = (
+        get_current_public_blog(
+            db=db,
+        )
+    )
+
+    if current_blog is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Active blog not found",
+        )
+
+    # ------------------------------------
+    # Articles
+    # ------------------------------------
+
     articles = (
         db.query(Article)
         .filter(
-            Article.status == "published"
+            Article.blog_id
+            == current_blog.id,
+            Article.status
+            == "published",
         )
         .order_by(
             Article.created_at.desc()
@@ -65,21 +154,21 @@ def blog_article_list(
         .all()
     )
 
+    # ------------------------------------
+    # Site Settings
+    # ------------------------------------
+
     site_setting = (
-        db.query(SiteSetting)
-        .filter(
-            SiteSetting.is_active.is_(True)
+        get_site_setting(
+            db=db,
+            blog_id=current_blog.id,
         )
-        .order_by(
-            SiteSetting.id.asc()
-        )
-        .first()
     )
 
     site_name = (
         site_setting.site_name
         if site_setting
-        else "AI Affiliate Blog"
+        else current_blog.name
     )
 
     site_description = (
@@ -94,7 +183,9 @@ def blog_article_list(
             site_setting
             and site_setting.site_url
         )
-        else str(request.base_url).rstrip("/")
+        else str(
+            request.base_url
+        ).rstrip("/")
     )
 
     canonical_url = (
@@ -107,17 +198,25 @@ def blog_article_list(
         else None
     )
 
+    # ------------------------------------
+    # Template
+    # ------------------------------------
+
     return templates.TemplateResponse(
         request=request,
         name="public/article_list.html",
         context={
             "articles": articles,
             "site_name": site_name,
-            "site_description": site_description,
-            "canonical_url": canonical_url,
-            "default_og_image": default_og_image,
+            "site_description":
+                site_description,
+            "canonical_url":
+                canonical_url,
+            "default_og_image":
+                default_og_image,
         },
     )
+
 
 # ========================================
 # BLOG ARTICLE DETAIL
@@ -133,11 +232,34 @@ def blog_article_detail(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    # ------------------------------------
+    # Current Blog
+    # ------------------------------------
+
+    current_blog = (
+        get_current_public_blog(
+            db=db,
+        )
+    )
+
+    if current_blog is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Active blog not found",
+        )
+
+    # ------------------------------------
+    # Article
+    # ------------------------------------
+
     article = (
         db.query(Article)
         .filter(
+            Article.blog_id
+            == current_blog.id,
             Article.slug == slug,
-            Article.status == "published",
+            Article.status
+            == "published",
         )
         .first()
     )
@@ -145,28 +267,27 @@ def blog_article_detail(
     if article is None:
         raise HTTPException(
             status_code=404,
-            detail="Published article not found",
+            detail=(
+                "Published article "
+                "not found"
+            ),
         )
 
-    # ====================================
+    # ------------------------------------
     # Site Settings
-    # ====================================
+    # ------------------------------------
 
     site_setting = (
-        db.query(SiteSetting)
-        .filter(
-            SiteSetting.is_active.is_(True)
+        get_site_setting(
+            db=db,
+            blog_id=current_blog.id,
         )
-        .order_by(
-            SiteSetting.id.asc()
-        )
-        .first()
     )
 
     site_name = (
         site_setting.site_name
         if site_setting
-        else "AI Affiliate Blog"
+        else current_blog.name
     )
 
     site_url = (
@@ -175,7 +296,9 @@ def blog_article_detail(
             site_setting
             and site_setting.site_url
         )
-        else str(request.base_url).rstrip("/")
+        else str(
+            request.base_url
+        ).rstrip("/")
     )
 
     default_og_image = (
@@ -184,9 +307,9 @@ def blog_article_detail(
         else None
     )
 
-    # ====================================
+    # ------------------------------------
     # Featured Image
-    # ====================================
+    # ------------------------------------
 
     featured_image = (
         db.query(ArticleImage)
@@ -204,6 +327,95 @@ def blog_article_detail(
         .first()
     )
 
+    # ------------------------------------
+    # OGP Image
+    # ------------------------------------
+
+    if featured_image:
+        og_image_url = str(
+            request.url_for(
+                "uploads",
+                path=(
+                    featured_image.image_url
+                    .replace(
+                        "/uploads/",
+                        "",
+                        1,
+                    )
+                ),
+            )
+        )
+
+    else:
+        og_image_url = (
+            default_og_image
+        )
+
+    # ------------------------------------
+    # Affiliate Link Expansion
+    # ------------------------------------
+
+    rendered_body = (
+        expand_affiliate_links(
+            body=article.body,
+            db=db,
+        )
+    )
+
+    # ------------------------------------
+    # Article Image Expansion
+    # ------------------------------------
+
+    rendered_body = (
+        expand_article_images(
+            body=rendered_body,
+            article_id=article.id,
+            db=db,
+        )
+    )
+
+    # ------------------------------------
+    # Markdown -> HTML
+    # ------------------------------------
+
+    body_html = markdown.markdown(
+        rendered_body,
+        extensions=[
+            "extra",
+            "sane_lists",
+        ],
+    )
+
+    # ------------------------------------
+    # Canonical URL
+    # ------------------------------------
+
+    canonical_url = (
+        f"{site_url}/blog/"
+        f"{article.slug}"
+    )
+
+    # ------------------------------------
+    # Template
+    # ------------------------------------
+
+    return templates.TemplateResponse(
+        request=request,
+        name="public/article_detail.html",
+        context={
+            "article": article,
+            "body_html": body_html,
+            "featured_image":
+                featured_image,
+            "site_name": site_name,
+            "canonical_url":
+                canonical_url,
+            "og_image_url":
+                og_image_url,
+        },
+    )
+
+
 # ========================================
 # SITEMAP
 # GET /sitemap.xml
@@ -217,15 +429,31 @@ def sitemap(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    # ------------------------------------
+    # Current Blog
+    # ------------------------------------
+
+    current_blog = (
+        get_current_public_blog(
+            db=db,
+        )
+    )
+
+    if current_blog is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Active blog not found",
+        )
+
+    # ------------------------------------
+    # Site Settings
+    # ------------------------------------
+
     site_setting = (
-        db.query(SiteSetting)
-        .filter(
-            SiteSetting.is_active.is_(True)
+        get_site_setting(
+            db=db,
+            blog_id=current_blog.id,
         )
-        .order_by(
-            SiteSetting.id.asc()
-        )
-        .first()
     )
 
     site_url = (
@@ -234,19 +462,32 @@ def sitemap(
             site_setting
             and site_setting.site_url
         )
-        else str(request.base_url).rstrip("/")
+        else str(
+            request.base_url
+        ).rstrip("/")
     )
+
+    # ------------------------------------
+    # Articles
+    # ------------------------------------
 
     articles = (
         db.query(Article)
         .filter(
-            Article.status == "published"
+            Article.blog_id
+            == current_blog.id,
+            Article.status
+            == "published",
         )
         .order_by(
-            Article.updated_at.desc()
+            Article.created_at.desc()
         )
         .all()
     )
+
+    # ------------------------------------
+    # URLs
+    # ------------------------------------
 
     urls: list[str] = []
 
@@ -259,28 +500,24 @@ def sitemap(
     )
 
     for article in articles:
-        lastmod = ""
-
-        if article.updated_at:
-            lastmod = (
-                f"<lastmod>"
-                f"{article.updated_at.date().isoformat()}"
-                f"</lastmod>"
-            )
-
         urls.append(
             f"""
     <url>
         <loc>{site_url}/blog/{article.slug}</loc>
-        {lastmod}
     </url>
             """.strip()
         )
 
+    # ------------------------------------
+    # XML
+    # ------------------------------------
+
     xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<?xml version="1.0" '
+        'encoding="UTF-8"?>\n'
         '<urlset '
-        'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        'xmlns="http://www.sitemaps.org/'
+        'schemas/sitemap/0.9">\n'
         + "\n".join(urls)
         + "\n</urlset>"
     )
@@ -289,101 +526,6 @@ def sitemap(
         content=xml,
         media_type="application/xml",
     )
-
-    # ====================================
-    # OGP Image
-    # ====================================
-
-    if featured_image:
-        og_image_url = str(
-            request.url_for(
-                "uploads",
-                path=featured_image.image_url.replace(
-                    "/uploads/",
-                    "",
-                    1,
-                ),
-            )
-        )
-
-    else:
-        og_image_url = default_og_image
-
-
-    # ====================================
-    # Affiliate link expansion
-    # ====================================
-
-    rendered_body = expand_affiliate_links(
-        body=article.body,
-        db=db,
-    )
-
-    # ====================================
-    # Article image expansion
-    # ====================================
-
-    rendered_body = expand_article_images(
-        body=rendered_body,
-        article_id=article.id,
-        db=db,
-    )
-
-    # ====================================
-    # Markdown -> HTML
-    # ====================================
-
-    body_html = markdown.markdown(
-        rendered_body,
-        extensions=[
-            "extra",
-            "sane_lists",
-        ],
-    )
-
-    # ====================================
-    # Canonical URL
-    # ====================================
-
-    canonical_url = (
-        f"{site_url}/blog/{article.slug}"
-    )
-
-    # ====================================
-    # OGP Image
-    # ====================================
-
-    if featured_image:
-        og_image_url = str(
-            request.url_for(
-                "uploads",
-                path=featured_image.image_url.replace(
-                    "/uploads/",
-                    "",
-                    1,
-                ),
-            )
-        )
-    else:
-        og_image_url = default_og_image
-
-    # ====================================
-    # Template
-    # ====================================
-
-    return templates.TemplateResponse(
-        request=request,
-        name="public/article_detail.html",
-        context={
-            "article": article,
-            "body_html": body_html,
-            "featured_image": featured_image,
-            "site_name": site_name,
-            "canonical_url": canonical_url,
-            "og_image_url": og_image_url,
-        },
-    )
-
 
 
 # ========================================
@@ -399,15 +541,31 @@ def robots_txt(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    # ------------------------------------
+    # Current Blog
+    # ------------------------------------
+
+    current_blog = (
+        get_current_public_blog(
+            db=db,
+        )
+    )
+
+    if current_blog is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Active blog not found",
+        )
+
+    # ------------------------------------
+    # Site Settings
+    # ------------------------------------
+
     site_setting = (
-        db.query(SiteSetting)
-        .filter(
-            SiteSetting.is_active.is_(True)
+        get_site_setting(
+            db=db,
+            blog_id=current_blog.id,
         )
-        .order_by(
-            SiteSetting.id.asc()
-        )
-        .first()
     )
 
     site_url = (
@@ -416,19 +574,25 @@ def robots_txt(
             site_setting
             and site_setting.site_url
         )
-        else str(request.base_url).rstrip("/")
+        else str(
+            request.base_url
+        ).rstrip("/")
     )
+
+    # ------------------------------------
+    # robots.txt
+    # ------------------------------------
 
     content = (
         "User-agent: *\n"
         "Allow: /\n"
         "Disallow: /admin/\n"
         "\n"
-        f"Sitemap: {site_url}/sitemap.xml\n"
+        f"Sitemap: "
+        f"{site_url}/sitemap.xml\n"
     )
 
     return Response(
         content=content,
         media_type="text/plain",
     )
-    
