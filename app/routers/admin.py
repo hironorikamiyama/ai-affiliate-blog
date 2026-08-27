@@ -2825,6 +2825,154 @@ def admin_user_edit(
     )
 
 # ========================================
+# USER PASSWORD CHANGE FORM
+# GET /admin/users/{user_id}/password
+# ========================================
+
+@router.get(
+    "/users/{user_id}/password",
+    response_class=HTMLResponse,
+)
+def admin_user_password_form(
+    request: Request,
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    admin_user = require_admin_user(
+        request,
+        db,
+    )
+
+    if admin_user is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin permission required",
+        )
+
+    user = (
+        db.query(User)
+        .filter(
+            User.id == user_id
+        )
+        .first()
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/user_password.html",
+        context={
+            "user": user,
+            "error": None,
+            "success": None,
+        },
+    )
+
+
+# ========================================
+# USER PASSWORD CHANGE
+# POST /admin/users/{user_id}/password
+# ========================================
+
+@router.post(
+    "/users/{user_id}/password",
+    response_class=HTMLResponse,
+)
+def admin_user_password_change(
+    request: Request,
+    user_id: int,
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    admin_user = require_admin_user(
+        request,
+        db,
+    )
+
+    if admin_user is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin permission required",
+        )
+
+    user = (
+        db.query(User)
+        .filter(
+            User.id == user_id
+        )
+        .first()
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    if len(password) < 12:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_password.html",
+            context={
+                "user": user,
+                "error": (
+                    "パスワードは12文字以上にしてください。"
+                ),
+                "success": None,
+            },
+            status_code=400,
+        )
+
+    if password != password_confirm:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_password.html",
+            context={
+                "user": user,
+                "error": (
+                    "パスワードが一致しません。"
+                ),
+                "success": None,
+            },
+            status_code=400,
+        )
+
+    user.password_hash = hash_password(
+        password
+    )
+
+    try:
+        db.commit()
+        db.refresh(user)
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update password",
+        ) from exc
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/user_password.html",
+        context={
+            "user": user,
+            "error": None,
+            "success": (
+                "パスワードを変更しました。"
+            ),
+        },
+    )
+
+
+# ========================================
 # LOGIN FORM
 # GET /admin/login
 # ========================================
