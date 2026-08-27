@@ -2,7 +2,10 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
 
     <title>記事編集</title>
 
@@ -105,6 +108,31 @@
             padding: 4px 8px;
             background: #eee;
             font-weight: bold;
+        }
+
+        /* ========================================
+           Article Image Embed Code
+           ======================================== */
+
+        .image-embed-code {
+            margin: 16px 0;
+        }
+
+        .image-embed-code-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .image-embed-code-row input {
+            flex: 1;
+            min-width: 0;
+            font-family: monospace;
+        }
+
+        .image-embed-code-row button {
+            width: auto;
+            white-space: nowrap;
         }
 
         /* ========================================
@@ -211,6 +239,10 @@
         @media (max-width: 800px) {
             .rewrite-columns {
                 grid-template-columns: 1fr;
+            }
+
+            .image-embed-code-row {
+                flex-direction: column;
             }
         }
     </style>
@@ -474,13 +506,16 @@
             <div class="field">
 
                 <label>
+
                     <input
                         name="is_featured"
                         type="checkbox"
                         value="true"
                         style="width: auto;"
                     >
+
                     アイキャッチ画像にする
+
                 </label>
 
             </div>
@@ -538,6 +573,37 @@
 
                         {{ image.original_filename }}
                     </p>
+
+
+                    <!-- ========================================
+                         Article Body Embed Code
+                         ======================================== -->
+
+                    <div class="image-embed-code">
+
+                        <strong>
+                            本文用コード
+                        </strong>
+
+                        <div class="image-embed-code-row">
+
+                            <input
+                                type="text"
+                                id="article-image-code-{{ image.id }}"
+                                value="{{ '{{' }}ARTICLE_IMAGE:{{ image.id }}{{ '}}' }}"
+                                readonly
+                            >
+
+                            <button
+                                type="button"
+                                onclick="copyArticleImageCode({{ image.id }})"
+                            >
+                                コピー
+                            </button>
+
+                        </div>
+
+                    </div>
 
 
                     <!-- ========================================
@@ -686,9 +752,11 @@
         method="post"
         action="/admin/articles/{{ article.id }}/seo"
     >
+
         <button type="submit">
             SEO分析を実行
         </button>
+
     </form>
 
 
@@ -1257,6 +1325,45 @@
 
 </div>
 
+
+<!-- ========================================
+     Copy Article Image Code
+     ======================================== -->
+
+<script>
+    async function copyArticleImageCode(imageId) {
+        const input = document.getElementById(
+            `article-image-code-${imageId}`
+        );
+
+        if (!input) {
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(
+                input.value
+            );
+
+            alert(
+                "本文用コードをコピーしました。"
+            );
+
+        } catch (error) {
+
+            input.focus();
+            input.select();
+
+            document.execCommand(
+                "copy"
+            );
+
+            alert(
+                "本文用コードをコピーしました。"
+            );
+        }
+    }
+</script>
 
 </body>
 </html>

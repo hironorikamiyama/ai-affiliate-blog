@@ -13,6 +13,9 @@ from app.models.article_image import ArticleImage
 from app.services.affiliate_link_renderer import (
     expand_affiliate_links,
 )
+from app.services.article_image_renderer import (
+    expand_article_images,
+)
 
 
 router = APIRouter(
@@ -120,6 +123,28 @@ def blog_article_detail(
     rendered_body = expand_affiliate_links(
         body=article.body,
         db=db,
+    )
+
+    # ====================================
+    # Article image expansion
+    # ====================================
+
+    rendered_body = expand_article_images(
+        body=rendered_body,
+        article_id=article.id,
+        db=db,
+    )
+
+    # ====================================
+    # Markdown -> HTML
+    # ====================================
+
+    body_html = markdown.markdown(
+        rendered_body,
+        extensions=[
+            "extra",
+            "sane_lists",
+        ],
     )
 
     # ====================================
