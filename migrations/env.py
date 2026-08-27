@@ -15,6 +15,7 @@ from app.models.category import Category
 from app.models.tag import Tag
 from app.models.article_tag import article_tags
 from app.models.user import User
+from app.models.site_setting import SiteSetting
 
 config = context.config
 

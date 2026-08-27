@@ -4,7 +4,77 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>記事一覧</title>
+        <title>{{ site_name }}</title>
+
+        {% if site_description %}
+        <meta
+            name="description"
+            content="{{ site_description }}"
+        >
+        {% endif %}
+
+        <link
+            rel="canonical"
+            href="{{ canonical_url }}"
+        >
+
+        <meta
+            property="og:type"
+            content="website"
+        >
+
+        <meta
+            property="og:site_name"
+            content="{{ site_name }}"
+        >
+
+        <meta
+            property="og:title"
+            content="{{ site_name }}"
+        >
+
+        {% if site_description %}
+        <meta
+            property="og:description"
+            content="{{ site_description }}"
+        >
+        {% endif %}
+
+        <meta
+            property="og:url"
+            content="{{ canonical_url }}"
+        >
+
+        {% if default_og_image %}
+        <meta
+            property="og:image"
+            content="{{ default_og_image }}"
+        >
+        {% endif %}
+
+        <meta
+            name="twitter:card"
+            content="summary_large_image"
+        >
+
+        <meta
+            name="twitter:title"
+            content="{{ site_name }}"
+        >
+
+        {% if site_description %}
+        <meta
+            name="twitter:description"
+            content="{{ site_description }}"
+        >
+        {% endif %}
+
+        {% if default_og_image %}
+        <meta
+            name="twitter:image"
+            content="{{ default_og_image }}"
+        >
+        {% endif %}
 
     <style>
         body {

@@ -2,7 +2,16 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
+from fastapi.responses import (
+    RedirectResponse,
+    JSONResponse,
+)
+from fastapi.templating import Jinja2Templates
+from starlette.exceptions import (
+    HTTPException as StarletteHTTPException,
+)
+
+from app.config import settings
 
 from app.config import settings
 
@@ -23,6 +32,38 @@ app = FastAPI(
     title="AI Affiliate Blog API",
 )
 
+templates = Jinja2Templates(
+    directory="templates"
+)
+
+# ========================================
+# 404 Handler
+# ========================================
+
+@app.exception_handler(
+    StarletteHTTPException
+)
+async def http_exception_handler(
+    request: Request,
+    exc: StarletteHTTPException,
+):
+    if (
+        exc.status_code == 404
+        and request.url.path.startswith("/blog")
+    ):
+        return templates.TemplateResponse(
+            request=request,
+            name="public/404.html",
+            context={},
+            status_code=404,
+        )
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+        },
+    )
 
 @app.middleware("http")
 async def protect_admin_routes(
@@ -85,14 +126,16 @@ async def protect_admin_routes(
     # ------------------------------------
 
     if (
-        path.startswith("/admin/users")
+        (
+            path.startswith("/admin/users")
+            or path.startswith("/admin/site-settings")
+        )
         and role != "admin"
     ):
         return RedirectResponse(
             url="/admin/articles",
             status_code=303,
         )
-
     return await call_next(request)
 
 app.add_middleware(

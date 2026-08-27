@@ -25,6 +25,8 @@ from app.models.article_image import ArticleImage
 from app.models.category import Category
 from app.models.tag import Tag
 from app.models.user import User
+from app.models.site_setting import SiteSetting
+
 from app.services.ai_writer import generate_article
 from app.services.seo_analyzer import analyze_seo
 from app.services.seo_rewriter import rewrite_article_for_seo
@@ -2969,6 +2971,137 @@ def admin_user_password_change(
                 "パスワードを変更しました。"
             ),
         },
+    )
+
+# ========================================
+# SITE SETTINGS
+# GET /admin/site-settings
+# ========================================
+
+@router.get(
+    "/site-settings",
+    response_class=HTMLResponse,
+)
+def admin_site_settings(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    require_admin(request)
+
+    site_setting = (
+        db.query(SiteSetting)
+        .order_by(SiteSetting.id.asc())
+        .first()
+    )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/site_settings.html",
+        context={
+            "site_setting": site_setting,
+            "saved": (
+                request.query_params.get("saved")
+                == "1"
+            ),
+            "error": None,
+        },
+    )
+
+
+# ========================================
+# SITE SETTINGS UPDATE
+# POST /admin/site-settings
+# ========================================
+
+@router.post(
+    "/site-settings",
+    response_class=HTMLResponse,
+)
+def admin_site_settings_update(
+    request: Request,
+    site_name: str = Form(...),
+    site_description: str = Form(""),
+    site_url: str = Form(""),
+    default_og_image: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    require_admin(request)
+
+    site_name = site_name.strip()
+    site_description = site_description.strip()
+    site_url = site_url.strip()
+    default_og_image = default_og_image.strip()
+
+    # ------------------------------------
+    # Validation
+    # ------------------------------------
+
+    if not site_name:
+        site_setting = (
+            db.query(SiteSetting)
+            .order_by(SiteSetting.id.asc())
+            .first()
+        )
+
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/site_settings.html",
+            context={
+                "site_setting": site_setting,
+                "saved": False,
+                "error":
+                    "サイト名を入力してください。",
+            },
+            status_code=422,
+        )
+
+    # ------------------------------------
+    # Get or create settings
+    # ------------------------------------
+
+    site_setting = (
+        db.query(SiteSetting)
+        .order_by(SiteSetting.id.asc())
+        .first()
+    )
+
+    if site_setting is None:
+        site_setting = SiteSetting(
+            site_name=site_name,
+            site_description=(
+                site_description or None
+            ),
+            site_url=(
+                site_url or None
+            ),
+            default_og_image=(
+                default_og_image or None
+            ),
+            is_active=True,
+        )
+
+        db.add(site_setting)
+
+    else:
+        site_setting.site_name = site_name
+
+        site_setting.site_description = (
+            site_description or None
+        )
+
+        site_setting.site_url = (
+            site_url or None
+        )
+
+        site_setting.default_og_image = (
+            default_og_image or None
+        )
+
+    db.commit()
+
+    return RedirectResponse(
+        url="/admin/site-settings?saved=1",
+        status_code=303,
     )
 
 

@@ -21,9 +21,15 @@
     </a>
 
     {% if request.session.get("role") == "admin" %}
+
     <a href="/admin/users">
         ユーザー管理
     </a>
+
+    <a href="/admin/site-settings">
+        サイト設定
+    </a>
+
     {% endif %}
 
     <a
