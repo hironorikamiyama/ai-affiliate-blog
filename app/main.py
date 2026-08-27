@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 
 from app.config import settings
 
@@ -14,11 +15,57 @@ from app.routers import public_article
 from app.routers import admin
 from app.routers import web
 
+from starlette.middleware.sessions import SessionMiddleware
+
+
 
 app = FastAPI(
     title="AI Affiliate Blog API",
 )
 
+@app.middleware("http")
+async def protect_admin_routes(
+    request: Request,
+    call_next,
+):
+    path = request.url.path
+
+    if not path.startswith("/admin"):
+        return await call_next(request)
+
+    public_admin_paths = {
+        "/admin/login",
+    }
+
+    if path in public_admin_paths:
+        return await call_next(request)
+
+    user_id = request.session.get(
+        "user_id"
+    )
+
+    role = request.session.get(
+        "role"
+    )
+
+    if user_id is None or role != "admin":
+        request.session.clear()
+
+        return RedirectResponse(
+            url="/admin/login",
+            status_code=303,
+        )
+
+    return await call_next(request)
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.session_secret_key,
+    session_cookie="ai_blog_session",
+    max_age=60 * 60 * 8,
+    same_site="lax",
+    https_only=settings.session_https_only,
+)
 
 # ========================================
 # Upload directory

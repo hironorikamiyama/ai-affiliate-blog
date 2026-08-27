@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -22,6 +24,8 @@ from app.models.article import Article
 from app.models.article_image import ArticleImage
 from app.models.category import Category
 from app.models.tag import Tag
+from app.models.user import User
+from app.services.auth import verify_password
 from app.services.ai_writer import generate_article
 from app.services.seo_analyzer import analyze_seo
 from app.services.seo_rewriter import rewrite_article_for_seo
@@ -2348,3 +2352,139 @@ def admin_category_delete(
         url="/admin/categories",
         status_code=303,
     )
+
+
+# ========================================
+# LOGIN FORM
+# GET /admin/login
+# ========================================
+
+@router.get(
+    "/login",
+    response_class=HTMLResponse,
+)
+def admin_login_form(
+    request: Request,
+):
+    if request.session.get("user_id"):
+        return RedirectResponse(
+            url="/admin/articles",
+            status_code=303,
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/login.html",
+        context={
+            "error": None,
+        },
+    )
+
+
+# ========================================
+# LOGIN
+# POST /admin/login
+# ========================================
+
+@router.post(
+    "/login",
+    response_class=HTMLResponse,
+)
+def admin_login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    username = username.strip()
+
+    user = (
+        db.query(User)
+        .filter(
+            User.username == username
+        )
+        .first()
+    )
+
+    if (
+        user is None
+        or not user.is_active
+        or not verify_password(
+            password,
+            user.password_hash,
+        )
+    ):
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/login.html",
+            context={
+                "error":
+                    "ユーザー名またはパスワードが正しくありません。",
+            },
+            status_code=401,
+        )
+
+    request.session.clear()
+
+    request.session["user_id"] = user.id
+    request.session["role"] = user.role
+
+    user.last_login_at = datetime.now(
+        timezone.utc
+    )
+
+    db.commit()
+
+    return RedirectResponse(
+        url="/admin/articles",
+        status_code=303,
+    )
+
+
+# ========================================
+# LOGOUT
+# POST /admin/logout
+# ========================================
+
+@router.post(
+    "/logout",
+)
+def admin_logout(
+    request: Request,
+):
+    request.session.clear()
+
+    return RedirectResponse(
+        url="/admin/login",
+        status_code=303,
+    )
+
+def require_admin_user(
+    request: Request,
+    db: Session,
+) -> User | None:
+    user_id = request.session.get(
+        "user_id"
+    )
+
+    if user_id is None:
+        return None
+
+    user = (
+        db.query(User)
+        .filter(
+            User.id == user_id,
+            User.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if user is None:
+        request.session.clear()
+        return None
+
+    if user.role != "admin":
+        request.session.clear()
+        return None
+
+    return user

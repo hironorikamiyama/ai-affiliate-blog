@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     seo_provider: str = "mock"
     seo_rewriter_provider: str = "mock"
 
+    # ========================================
+    # Session
+    # ========================================
+
+    session_secret_key: str
+    session_https_only: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
