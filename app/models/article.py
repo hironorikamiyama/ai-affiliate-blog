@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-
 from app.db.database import Base
 from app.models.article_tag import article_tags
 
@@ -21,12 +20,12 @@ class Article(Base):
         index=True,
     )
 
-    blog_id: Mapped[int | None] = mapped_column(
+    blog_id: Mapped[int] = mapped_column(
         ForeignKey(
             "blogs.id",
             ondelete="CASCADE",
         ),
-        nullable=True,
+        nullable=False,
         index=True,
     )
 
@@ -75,13 +74,11 @@ class Article(Base):
         default=utc_now,
     )
 
-    blog_id: Mapped[int] = mapped_column(
-        ForeignKey(
-            "blogs.id",
-            ondelete="CASCADE",
-        ),
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
-        index=True,
+        default=utc_now,
+        onupdate=utc_now,
     )
 
     category_id: Mapped[int | None] = mapped_column(
