@@ -49,3 +49,8 @@ class Blog(Base):
         "Article",
         back_populates="blog",
     )
+
+    categories = relationship(
+        "Category",
+        back_populates="blog",
+    )

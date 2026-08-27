@@ -21,6 +21,8 @@ from app.models.affiliate import AffiliateProgram
 from app.models.article import Article
 from app.models.article_image import ArticleImage
 from app.models.category import Category
+from app.models.blog import Blog
+from app.models.blog_membership import BlogMembership
 from app.models.tag import Tag
 from app.services.ai_writer import generate_article
 from app.services.seo_analyzer import analyze_seo
@@ -62,6 +64,55 @@ MAX_IMAGE_FILE_SIZE = (
 )
 
 # ========================================
+# CURRENT ADMIN BLOG
+# ========================================
+
+def get_current_admin_blog(
+    request: Request,
+    db: Session,
+) -> Blog:
+    user_id = request.session.get("user_id")
+
+    if user_id is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required",
+        )
+
+    membership = (
+        db.query(BlogMembership)
+        .filter(
+            BlogMembership.user_id == user_id,
+        )
+        .order_by(BlogMembership.id.asc())
+        .first()
+    )
+
+    if membership is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Blog membership not found",
+        )
+
+    blog = (
+        db.query(Blog)
+        .filter(
+            Blog.id == membership.blog_id,
+            Blog.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if blog is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Active blog not found",
+        )
+
+    return blog
+
+
+# ========================================
 # ARTICLE LIST
 # GET /admin/articles
 # ========================================
@@ -74,8 +125,14 @@ def admin_article_list(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     articles = (
         db.query(Article)
+        .filter(Article.blog_id == current_blog.id)
         .order_by(
             Article.created_at.desc()
         )
@@ -104,10 +161,16 @@ def admin_article_edit(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     article = (
         db.query(Article)
         .filter(
-            Article.id == article_id
+            Article.id == article_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -120,6 +183,7 @@ def admin_article_edit(
 
     categories = (
         db.query(Category)
+        .filter(Category.blog_id == current_blog.id)
         .order_by(
             Category.name.asc()
         )
@@ -173,6 +237,7 @@ def admin_article_edit(
     "/articles/{article_id}/edit",
 )
 def admin_article_update(
+    request: Request,
     article_id: int,
     title: str = Form(...),
     slug: str = Form(...),
@@ -183,10 +248,16 @@ def admin_article_update(
     db: Session = Depends(get_db),
     tag_ids: list[int] = Form(default=[]),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     article = (
         db.query(Article)
         .filter(
-            Article.id == article_id
+            Article.id == article_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -205,6 +276,7 @@ def admin_article_update(
         db.query(Article)
         .filter(
             Article.slug == slug,
+            Article.blog_id == current_blog.id,
             Article.id != article_id,
         )
         .first()
@@ -244,7 +316,8 @@ def admin_article_update(
             db.query(Category)
             .filter(
                 Category.id
-                == category_id_value
+                == category_id_value,
+                Category.blog_id == current_blog.id,
             )
             .first()
         )
@@ -343,6 +416,7 @@ def admin_article_update(
     "/articles/{article_id}/images",
 )
 async def admin_article_image_upload(
+    request: Request,
     article_id: int,
     file: UploadFile = File(...),
     alt_text: str = Form(""),
@@ -351,10 +425,16 @@ async def admin_article_image_upload(
     is_featured: bool = Form(False),
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     article = (
         db.query(Article)
         .filter(
-            Article.id == article_id
+            Article.id == article_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -526,6 +606,7 @@ async def admin_article_image_upload(
     "/articles/{article_id}/images/{image_id}/edit",
 )
 def admin_article_image_update(
+    request: Request,
     article_id: int,
     image_id: int,
     alt_text: str = Form(""),
@@ -534,11 +615,21 @@ def admin_article_image_update(
     is_featured: bool = Form(False),
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     image = (
         db.query(ArticleImage)
+        .join(
+            Article,
+            Article.id == ArticleImage.article_id,
+        )
         .filter(
             ArticleImage.id == image_id,
             ArticleImage.article_id == article_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -627,15 +718,26 @@ def admin_article_image_update(
     "/articles/{article_id}/images/{image_id}/delete",
 )
 def admin_article_image_delete(
+    request: Request,
     article_id: int,
     image_id: int,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     image = (
         db.query(ArticleImage)
+        .join(
+            Article,
+            Article.id == ArticleImage.article_id,
+        )
         .filter(
             ArticleImage.id == image_id,
             ArticleImage.article_id == article_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -705,6 +807,11 @@ def admin_article_seo_analysis(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     # ------------------------------------
     # Article
     # ------------------------------------
@@ -712,7 +819,8 @@ def admin_article_seo_analysis(
     article = (
         db.query(Article)
         .filter(
-            Article.id == article_id
+            Article.id == article_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -732,6 +840,7 @@ def admin_article_seo_analysis(
 
     categories = (
         db.query(Category)
+        .filter(Category.blog_id == current_blog.id)
         .order_by(
             Category.name.asc()
         )
@@ -825,6 +934,11 @@ def admin_article_seo_rewrite(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     # ------------------------------------
     # Article
     # ------------------------------------
@@ -832,7 +946,8 @@ def admin_article_seo_rewrite(
     article = (
         db.query(Article)
         .filter(
-            Article.id == article_id
+            Article.id == article_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -851,6 +966,7 @@ def admin_article_seo_rewrite(
 
     categories = (
         db.query(Category)
+        .filter(Category.blog_id == current_blog.id)
         .order_by(
             Category.name.asc()
         )
@@ -969,14 +1085,21 @@ def admin_article_seo_rewrite(
     "/articles/{article_id}/seo/rewrite/apply",
 )
 def admin_article_apply_seo_rewrite(
+    request: Request,
     article_id: int,
     rewritten_body: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     article = (
         db.query(Article)
         .filter(
-            Article.id == article_id
+            Article.id == article_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -1027,14 +1150,21 @@ def admin_article_apply_seo_rewrite(
     "/articles/{article_id}/seo/apply-title",
 )
 def admin_article_apply_seo_title(
+    request: Request,
     article_id: int,
     title_suggestion: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     article = (
         db.query(Article)
         .filter(
-            Article.id == article_id
+            Article.id == article_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -1079,14 +1209,21 @@ def admin_article_apply_seo_title(
     "/articles/{article_id}/seo/apply-meta-description",
 )
 def admin_article_apply_seo_meta_description(
+    request: Request,
     article_id: int,
     meta_description_suggestion: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     article = (
         db.query(Article)
         .filter(
-            Article.id == article_id
+            Article.id == article_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -1137,13 +1274,20 @@ def admin_article_apply_seo_meta_description(
     "/articles/{article_id}/publish",
 )
 def admin_article_publish(
+    request: Request,
     article_id: int,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     article = (
         db.query(Article)
         .filter(
-            Article.id == article_id
+            Article.id == article_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -1183,13 +1327,20 @@ def admin_article_publish(
     "/articles/{article_id}/draft",
 )
 def admin_article_to_draft(
+    request: Request,
     article_id: int,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     article = (
         db.query(Article)
         .filter(
-            Article.id == article_id
+            Article.id == article_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -1233,6 +1384,11 @@ def admin_article_generate_form(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     affiliate_programs = (
         db.query(AffiliateProgram)
         .order_by(
@@ -1243,6 +1399,7 @@ def admin_article_generate_form(
 
     categories = (
         db.query(Category)
+        .filter(Category.blog_id == current_blog.id)
         .order_by(
             Category.name.asc()
         )
@@ -1277,6 +1434,7 @@ def admin_article_generate_form(
     "/articles/generate",
 )
 def admin_article_generate(
+    request: Request,
     affiliate_program_id: int = Form(...),
     keyword: str = Form(...),
     category_id: int = Form(...),
@@ -1285,6 +1443,11 @@ def admin_article_generate(
     ),
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     # ------------------------------------
     # AffiliateProgram
     # ------------------------------------
@@ -1311,7 +1474,8 @@ def admin_article_generate(
     category = (
         db.query(Category)
         .filter(
-            Category.id == category_id
+            Category.id == category_id,
+            Category.blog_id == current_blog.id,
         )
         .first()
     )
@@ -1393,7 +1557,8 @@ def admin_article_generate(
         db.query(Article)
         .filter(
             Article.slug
-            == generated["slug"]
+            == generated["slug"],
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
@@ -1412,6 +1577,7 @@ def admin_article_generate(
     # ------------------------------------
 
     article = Article(
+        blog_id=current_blog.id,
         affiliate_program_id=(
             affiliate_program_id
         ),
