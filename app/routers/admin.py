@@ -25,7 +25,6 @@ from app.models.article_image import ArticleImage
 from app.models.category import Category
 from app.models.tag import Tag
 from app.models.user import User
-from app.services.auth import verify_password
 from app.services.ai_writer import generate_article
 from app.services.seo_analyzer import analyze_seo
 from app.services.seo_rewriter import rewrite_article_for_seo
@@ -33,6 +32,10 @@ from app.services.seo_rewriter import rewrite_article_for_seo
 from pathlib import Path
 from uuid import uuid4
 
+from app.services.auth import (
+    hash_password,
+    verify_password,
+)
 
 router = APIRouter(
     prefix="/admin",
@@ -64,6 +67,22 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
 MAX_IMAGE_FILE_SIZE = (
     5 * 1024 * 1024
 )
+
+def require_admin(request: Request) -> None:
+    """
+    admin 権限を要求する。
+
+    ログイン済みでも role が admin でなければ
+    ユーザー管理機能へのアクセスを拒否する。
+    """
+
+    role = request.session.get("role")
+
+    if role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Admin permission required",
+        )
 
 # ========================================
 # ARTICLE LIST
@@ -2353,6 +2372,457 @@ def admin_category_delete(
         status_code=303,
     )
 
+# ========================================
+# USER LIST
+# GET /admin/users
+# ========================================
+
+@router.get(
+    "/users",
+    response_class=HTMLResponse,
+)
+def admin_user_list(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    users = (
+        db.query(User)
+        .order_by(
+            User.id.asc()
+        )
+        .all()
+    )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/users.html",
+        context={
+            "users": users,
+        },
+    )
+
+# ========================================
+# USER CREATE FORM
+# GET /admin/users/new
+# ========================================
+
+@router.get(
+    "/users/new",
+    response_class=HTMLResponse,
+)
+def admin_user_create_form(
+    request: Request,
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/user_form.html",
+        context={
+            "user": None,
+            "error": None,
+        },
+    )
+
+
+# ========================================
+# USER CREATE
+# POST /admin/users/new
+# ========================================
+
+@router.post(
+    "/users/new",
+    response_class=HTMLResponse,
+)
+def admin_user_create(
+    request: Request,
+    username: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    role: str = Form(...),
+    is_active: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    username = username.strip()
+    email = email.strip().lower()
+    role = role.strip().lower()
+
+    # ------------------------------------
+    # Validation
+    # ------------------------------------
+
+    if not username:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_form.html",
+            context={
+                "user": None,
+                "error": "ユーザー名を入力してください。",
+            },
+            status_code=400,
+        )
+
+    if not email:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_form.html",
+            context={
+                "user": None,
+                "error": "Emailを入力してください。",
+            },
+            status_code=400,
+        )
+
+    if "@" not in email:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_form.html",
+            context={
+                "user": None,
+                "error": "Emailの形式が正しくありません。",
+            },
+            status_code=400,
+        )
+
+    if len(password) < 12:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_form.html",
+            context={
+                "user": None,
+                "error": "パスワードは12文字以上にしてください。",
+            },
+            status_code=400,
+        )
+
+    if password != password_confirm:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_form.html",
+            context={
+                "user": None,
+                "error": "パスワードが一致しません。",
+            },
+            status_code=400,
+        )
+
+    if role not in {
+        "admin",
+        "editor",
+    }:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_form.html",
+            context={
+                "user": None,
+                "error": "Roleが不正です。",
+            },
+            status_code=400,
+        )
+
+    # ------------------------------------
+    # Duplicate check
+    # ------------------------------------
+
+    existing_user = (
+        db.query(User)
+        .filter(
+            (
+                User.username == username
+            )
+            | (
+                User.email == email
+            )
+        )
+        .first()
+    )
+
+    if existing_user is not None:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_form.html",
+            context={
+                "user": None,
+                "error": (
+                    "同じユーザー名または"
+                    "Emailが既に登録されています。"
+                ),
+            },
+            status_code=409,
+        )
+
+    # ------------------------------------
+    # Create User
+    # ------------------------------------
+
+    user = User(
+        username=username,
+        email=email,
+        password_hash=hash_password(
+            password
+        ),
+        role=role,
+        is_active=is_active,
+    )
+
+    try:
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    except IntegrityError:
+        db.rollback()
+
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_form.html",
+            context={
+                "user": None,
+                "error": (
+                    "ユーザー名またはEmailが"
+                    "既に使用されています。"
+                ),
+            },
+            status_code=409,
+        )
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create user",
+        ) from exc
+
+    return RedirectResponse(
+        url="/admin/users",
+        status_code=303,
+    )
+
+
+# ========================================
+# USER EDIT FORM
+# GET /admin/users/{user_id}/edit
+# ========================================
+
+@router.get(
+    "/users/{user_id}/edit",
+    response_class=HTMLResponse,
+)
+def admin_user_edit_page(
+    request: Request,
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    user = (
+        db.query(User)
+        .filter(User.id == user_id)
+        .first()
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/user_edit.html",
+        context={
+            "user": user,
+            "error": None,
+        },
+    )
+
+# ========================================
+# USER UPDATE
+# POST /admin/users/{user_id}/edit
+# ========================================
+
+@router.post(
+    "/users/{user_id}/edit",
+    response_class=HTMLResponse,
+)
+def admin_user_edit(
+    request: Request,
+    user_id: int,
+    username: str = Form(...),
+    email: str = Form(...),
+    role: str = Form(...),
+    is_active: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    user = (
+        db.query(User)
+        .filter(User.id == user_id)
+        .first()
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    username = username.strip().lower()
+    email = email.strip().lower()
+
+    active_value = is_active == "on"
+
+    # ------------------------------------
+    # Role validation
+    # ------------------------------------
+
+    if role not in {
+        "admin",
+        "editor",
+    }:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_edit.html",
+            context={
+                "user": user,
+                "error": "Roleが不正です。",
+            },
+            status_code=400,
+        )
+
+    # ------------------------------------
+    # Username duplicate check
+    # ------------------------------------
+
+    existing_username = (
+        db.query(User)
+        .filter(
+            User.username == username,
+            User.id != user.id,
+        )
+        .first()
+    )
+
+    if existing_username is not None:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_edit.html",
+            context={
+                "user": user,
+                "error": "このユーザー名は既に使用されています。",
+            },
+            status_code=400,
+        )
+
+    # ------------------------------------
+    # Email duplicate check
+    # ------------------------------------
+
+    existing_email = (
+        db.query(User)
+        .filter(
+            User.email == email,
+            User.id != user.id,
+        )
+        .first()
+    )
+
+    if existing_email is not None:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_edit.html",
+            context={
+                "user": user,
+                "error": "このEmailは既に使用されています。",
+            },
+            status_code=400,
+        )
+
+    # ------------------------------------
+    # Current logged-in user
+    # ------------------------------------
+
+    current_user_id = request.session.get(
+        "user_id"
+    )
+
+    # 自分自身を無効化させない
+    if (
+        user.id == current_user_id
+        and not active_value
+    ):
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_edit.html",
+            context={
+                "user": user,
+                "error": "自分自身を無効化することはできません。",
+            },
+            status_code=400,
+        )
+
+    # 自分自身をeditorへ降格させない
+    if (
+        user.id == current_user_id
+        and role != "admin"
+    ):
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/user_edit.html",
+            context={
+                "user": user,
+                "error": "自分自身のadmin権限を解除することはできません。",
+            },
+            status_code=400,
+        )
+
+    # ------------------------------------
+    # Last active admin protection
+    # ------------------------------------
+
+    if (
+        user.role == "admin"
+        and user.is_active
+        and (
+            role != "admin"
+            or not active_value
+        )
+    ):
+        active_admin_count = (
+            db.query(User)
+            .filter(
+                User.role == "admin",
+                User.is_active.is_(True),
+            )
+            .count()
+        )
+
+        if active_admin_count <= 1:
+            return templates.TemplateResponse(
+                request=request,
+                name="admin/user_edit.html",
+                context={
+                    "user": user,
+                    "error": (
+                        "最後の有効なadminを"
+                        "無効化または降格することはできません。"
+                    ),
+                },
+                status_code=400,
+            )
+
+    # ------------------------------------
+    # Update
+    # ------------------------------------
+
+    user.username = username
+    user.email = email
+    user.role = role
+    user.is_active = active_value
+
+    db.commit()
+
+    return RedirectResponse(
+        url="/admin/users",
+        status_code=303,
+    )
 
 # ========================================
 # LOGIN FORM

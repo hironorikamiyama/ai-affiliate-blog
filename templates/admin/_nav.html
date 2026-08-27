@@ -20,6 +20,12 @@
         アフィリエイト管理
     </a>
 
+    {% if request.session.get("role") == "admin" %}
+    <a href="/admin/users">
+        ユーザー管理
+    </a>
+    {% endif %}
+
     <a
         href="/blog"
         target="_blank"

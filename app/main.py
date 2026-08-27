@@ -23,6 +23,7 @@ app = FastAPI(
     title="AI Affiliate Blog API",
 )
 
+
 @app.middleware("http")
 async def protect_admin_routes(
     request: Request,
@@ -30,9 +31,11 @@ async def protect_admin_routes(
 ):
     path = request.url.path
 
+    # 管理画面以外はそのまま通す
     if not path.startswith("/admin"):
         return await call_next(request)
 
+    # ログイン画面は未認証でも利用可能
     public_admin_paths = {
         "/admin/login",
     }
@@ -48,11 +51,45 @@ async def protect_admin_routes(
         "role"
     )
 
-    if user_id is None or role != "admin":
+    # ------------------------------------
+    # 未ログイン
+    # ------------------------------------
+
+    if user_id is None:
         request.session.clear()
 
         return RedirectResponse(
             url="/admin/login",
+            status_code=303,
+        )
+
+    # ------------------------------------
+    # Role validation
+    # ------------------------------------
+
+    if role not in {
+        "admin",
+        "editor",
+    }:
+        request.session.clear()
+
+        return RedirectResponse(
+            url="/admin/login",
+            status_code=303,
+        )
+
+    # ------------------------------------
+    # User management
+    #
+    # admin のみ許可
+    # ------------------------------------
+
+    if (
+        path.startswith("/admin/users")
+        and role != "admin"
+    ):
+        return RedirectResponse(
+            url="/admin/articles",
             status_code=303,
         )
 

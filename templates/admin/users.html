@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>ユーザー管理</title>
+</head>
+
+<body>
+
+    {% include "admin/_nav.html" %}
+
+    <h1>ユーザー管理</h1>
+
+    <p>
+        <a href="/admin/users/new">
+            新規ユーザー作成
+        </a>
+    </p>
+
+    <table
+        border="1"
+        cellpadding="8"
+        cellspacing="0"
+    >
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>ユーザー名</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>状態</th>
+                <th>最終ログイン</th>
+                <th>作成日時</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+
+        <tbody>
+
+            {% for user in users %}
+            <tr>
+
+                <td>
+                    {{ user.id }}
+                </td>
+
+                <td>
+                    {{ user.username }}
+                </td>
+
+                <td>
+                    {{ user.email }}
+                </td>
+
+                <td>
+                    {{ user.role }}
+                </td>
+
+                <td>
+                    {% if user.is_active %}
+                        有効
+                    {% else %}
+                        無効
+                    {% endif %}
+                </td>
+
+                <td>
+                    {% if user.last_login_at %}
+                        {{ user.last_login_at }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+
+                <td>
+                    {{ user.created_at }}
+                </td>
+
+                <td>
+                    <a href="/admin/users/{{ user.id }}/edit">
+                        編集
+                    </a>
+                </td>
+
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="8">
+                    ユーザーが登録されていません。
+                </td>
+            </tr>
+            {% endfor %}
+
+        </tbody>
+    </table>
+
+</body>
+
+</html>
