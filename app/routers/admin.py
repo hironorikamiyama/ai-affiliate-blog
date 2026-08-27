@@ -140,6 +140,14 @@ def admin_article_edit(
         .all()
     )
 
+    tags = (
+        db.query(Tag)
+        .order_by(
+            Tag.name.asc()
+        )
+        .all()
+    )
+
     return templates.TemplateResponse(
         request=request,
         name="admin/article_edit.html",
@@ -149,6 +157,7 @@ def admin_article_edit(
             "images": images,
             "seo_result": None,
             "rewrite_result": None,
+            "tags": tags,
         },
     )
 
@@ -173,6 +182,7 @@ def admin_article_update(
     body: str = Form(...),
     category_id: str = Form(""),
     db: Session = Depends(get_db),
+    tag_ids: list[int] = Form(default=[]),
 ):
     article = (
         db.query(Article)
@@ -252,6 +262,52 @@ def admin_article_update(
 
     else:
         article.category_id = None
+
+    # ------------------------------------
+    # Tags
+    # ------------------------------------
+
+    if tag_ids:
+        unique_tag_ids = list(
+            dict.fromkeys(
+                tag_ids
+            )
+        )
+
+        selected_tags = (
+            db.query(Tag)
+            .filter(
+                Tag.id.in_(
+                    unique_tag_ids
+                )
+            )
+            .all()
+        )
+
+        found_tag_ids = {
+            tag.id
+            for tag in selected_tags
+        }
+
+        missing_tag_ids = [
+            tag_id
+            for tag_id in unique_tag_ids
+            if tag_id not in found_tag_ids
+        ]
+
+        if missing_tag_ids:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "Tag not found: "
+                    f"{missing_tag_ids}"
+                ),
+            )
+
+        article.tags = selected_tags
+
+    else:
+        article.tags = []
 
     try:
         db.commit()
@@ -1649,5 +1705,646 @@ def admin_affiliate_program_delete(
 
     return RedirectResponse(
         url="/admin/affiliate-programs",
+        status_code=303,
+    )
+
+# ========================================
+# TAG LIST
+# GET /admin/tags
+# ========================================
+
+@router.get(
+    "/tags",
+    response_class=HTMLResponse,
+)
+def admin_tag_list(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    tags = (
+        db.query(Tag)
+        .order_by(
+            Tag.name.asc()
+        )
+        .all()
+    )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/tags.html",
+        context={
+            "tags": tags,
+        },
+    )
+
+
+# ========================================
+# TAG CREATE FORM
+# GET /admin/tags/new
+# ========================================
+
+@router.get(
+    "/tags/new",
+    response_class=HTMLResponse,
+)
+def admin_tag_create_form(
+    request: Request,
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/tag_form.html",
+        context={
+            "tag": None,
+        },
+    )
+
+
+# ========================================
+# TAG CREATE
+# POST /admin/tags/new
+# ========================================
+
+@router.post(
+    "/tags/new",
+)
+def admin_tag_create(
+    name: str = Form(...),
+    slug: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    name = name.strip()
+    slug = slug.strip()
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="Tag name is empty",
+        )
+
+    if not slug:
+        raise HTTPException(
+            status_code=400,
+            detail="Tag slug is empty",
+        )
+
+    existing_tag = (
+        db.query(Tag)
+        .filter(
+            (
+                Tag.name == name
+            )
+            | (
+                Tag.slug == slug
+            )
+        )
+        .first()
+    )
+
+    if existing_tag is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Tag name or slug already exists",
+        )
+
+    tag = Tag(
+        name=name,
+        slug=slug,
+    )
+
+    try:
+        db.add(tag)
+        db.commit()
+        db.refresh(tag)
+
+    except IntegrityError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail="Tag conflicts with existing data",
+        ) from exc
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create tag",
+        ) from exc
+
+    return RedirectResponse(
+        url="/admin/tags",
+        status_code=303,
+    )
+
+
+# ========================================
+# TAG EDIT FORM
+# GET /admin/tags/{tag_id}/edit
+# ========================================
+
+@router.get(
+    "/tags/{tag_id}/edit",
+    response_class=HTMLResponse,
+)
+def admin_tag_edit_form(
+    tag_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    tag = (
+        db.query(Tag)
+        .filter(
+            Tag.id == tag_id
+        )
+        .first()
+    )
+
+    if tag is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Tag not found",
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/tag_form.html",
+        context={
+            "tag": tag,
+        },
+    )
+
+
+# ========================================
+# TAG UPDATE
+# POST /admin/tags/{tag_id}/edit
+# ========================================
+
+@router.post(
+    "/tags/{tag_id}/edit",
+)
+def admin_tag_update(
+    tag_id: int,
+    name: str = Form(...),
+    slug: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    tag = (
+        db.query(Tag)
+        .filter(
+            Tag.id == tag_id
+        )
+        .first()
+    )
+
+    if tag is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Tag not found",
+        )
+
+    name = name.strip()
+    slug = slug.strip()
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="Tag name is empty",
+        )
+
+    if not slug:
+        raise HTTPException(
+            status_code=400,
+            detail="Tag slug is empty",
+        )
+
+    existing_tag = (
+        db.query(Tag)
+        .filter(
+            Tag.id != tag_id,
+            (
+                Tag.name == name
+            )
+            | (
+                Tag.slug == slug
+            ),
+        )
+        .first()
+    )
+
+    if existing_tag is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Tag name or slug already exists",
+        )
+
+    tag.name = name
+    tag.slug = slug
+
+    try:
+        db.commit()
+        db.refresh(tag)
+
+    except IntegrityError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail="Tag conflicts with existing data",
+        ) from exc
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update tag",
+        ) from exc
+
+    return RedirectResponse(
+        url="/admin/tags",
+        status_code=303,
+    )
+
+
+# ========================================
+# TAG DELETE
+# POST /admin/tags/{tag_id}/delete
+# ========================================
+
+@router.post(
+    "/tags/{tag_id}/delete",
+)
+def admin_tag_delete(
+    tag_id: int,
+    db: Session = Depends(get_db),
+):
+    tag = (
+        db.query(Tag)
+        .filter(
+            Tag.id == tag_id
+        )
+        .first()
+    )
+
+    if tag is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Tag not found",
+        )
+
+    try:
+        db.delete(tag)
+        db.commit()
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete tag",
+        ) from exc
+
+    return RedirectResponse(
+        url="/admin/tags",
+        status_code=303,
+    )
+
+# ========================================
+# CATEGORY LIST
+# GET /admin/categories
+# ========================================
+
+@router.get(
+    "/categories",
+    response_class=HTMLResponse,
+)
+def admin_category_list(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    categories = (
+        db.query(Category)
+        .order_by(
+            Category.name.asc()
+        )
+        .all()
+    )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/categories.html",
+        context={
+            "categories": categories,
+        },
+    )
+
+
+# ========================================
+# CATEGORY CREATE FORM
+# GET /admin/categories/new
+# ========================================
+
+@router.get(
+    "/categories/new",
+    response_class=HTMLResponse,
+)
+def admin_category_create_form(
+    request: Request,
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/category_form.html",
+        context={
+            "category": None,
+        },
+    )
+
+
+# ========================================
+# CATEGORY CREATE
+# POST /admin/categories/new
+# ========================================
+
+@router.post(
+    "/categories/new",
+)
+def admin_category_create(
+    name: str = Form(...),
+    slug: str = Form(...),
+    description: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    name = name.strip()
+    slug = slug.strip()
+    description = description.strip()
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="Category name is empty",
+        )
+
+    if not slug:
+        raise HTTPException(
+            status_code=400,
+            detail="Category slug is empty",
+        )
+
+    existing_category = (
+        db.query(Category)
+        .filter(
+            (
+                Category.name == name
+            )
+            | (
+                Category.slug == slug
+            )
+        )
+        .first()
+    )
+
+    if existing_category is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Category name or slug "
+                "already exists"
+            ),
+        )
+
+    category = Category(
+        name=name,
+        slug=slug,
+        description=description or None,
+    )
+
+    try:
+        db.add(category)
+        db.commit()
+        db.refresh(category)
+
+    except IntegrityError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Category conflicts "
+                "with existing data"
+            ),
+        ) from exc
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create category",
+        ) from exc
+
+    return RedirectResponse(
+        url="/admin/categories",
+        status_code=303,
+    )
+
+
+# ========================================
+# CATEGORY EDIT FORM
+# GET /admin/categories/{category_id}/edit
+# ========================================
+
+@router.get(
+    "/categories/{category_id}/edit",
+    response_class=HTMLResponse,
+)
+def admin_category_edit_form(
+    category_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    category = (
+        db.query(Category)
+        .filter(
+            Category.id == category_id
+        )
+        .first()
+    )
+
+    if category is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Category not found",
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/category_form.html",
+        context={
+            "category": category,
+        },
+    )
+
+
+# ========================================
+# CATEGORY UPDATE
+# POST /admin/categories/{category_id}/edit
+# ========================================
+
+@router.post(
+    "/categories/{category_id}/edit",
+)
+def admin_category_update(
+    category_id: int,
+    name: str = Form(...),
+    slug: str = Form(...),
+    description: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    category = (
+        db.query(Category)
+        .filter(
+            Category.id == category_id
+        )
+        .first()
+    )
+
+    if category is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Category not found",
+        )
+
+    name = name.strip()
+    slug = slug.strip()
+    description = description.strip()
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="Category name is empty",
+        )
+
+    if not slug:
+        raise HTTPException(
+            status_code=400,
+            detail="Category slug is empty",
+        )
+
+    existing_category = (
+        db.query(Category)
+        .filter(
+            Category.id != category_id,
+            (
+                Category.name == name
+            )
+            | (
+                Category.slug == slug
+            ),
+        )
+        .first()
+    )
+
+    if existing_category is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Category name or slug "
+                "already exists"
+            ),
+        )
+
+    category.name = name
+    category.slug = slug
+    category.description = (
+        description or None
+    )
+
+    try:
+        db.commit()
+        db.refresh(category)
+
+    except IntegrityError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Category conflicts "
+                "with existing data"
+            ),
+        ) from exc
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update category",
+        ) from exc
+
+    return RedirectResponse(
+        url="/admin/categories",
+        status_code=303,
+    )
+
+
+# ========================================
+# CATEGORY DELETE
+# POST /admin/categories/{category_id}/delete
+# ========================================
+
+@router.post(
+    "/categories/{category_id}/delete",
+)
+def admin_category_delete(
+    category_id: int,
+    db: Session = Depends(get_db),
+):
+    category = (
+        db.query(Category)
+        .filter(
+            Category.id == category_id
+        )
+        .first()
+    )
+
+    if category is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Category not found",
+        )
+
+    linked_article = (
+        db.query(Article)
+        .filter(
+            Article.category_id == category_id
+        )
+        .first()
+    )
+
+    if linked_article is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Category is used by articles "
+                "and cannot be deleted"
+            ),
+        )
+
+    try:
+        db.delete(category)
+        db.commit()
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete category",
+        ) from exc
+
+    return RedirectResponse(
+        url="/admin/categories",
         status_code=303,
     )

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        {% if tag %}
+            タグ編集
+        {% else %}
+            タグ作成
+        {% endif %}
+    </title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .back {
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+
+        .field {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+{% include "admin/_nav.html" %}
+<a
+    class="back"
+    href="/admin/tags"
+>
+    ← タグ一覧へ戻る
+</a>
+
+
+{% if tag %}
+
+<h1>タグ編集</h1>
+
+<form
+    method="post"
+    action="/admin/tags/{{ tag.id }}/edit"
+>
+
+{% else %}
+
+<h1>タグ作成</h1>
+
+<form
+    method="post"
+    action="/admin/tags/new"
+>
+
+{% endif %}
+
+
+    <div class="field">
+
+        <label for="name">
+            名前
+        </label>
+
+        <input
+            id="name"
+            name="name"
+            type="text"
+            value="{{ tag.name if tag else '' }}"
+            maxlength="100"
+            required
+        >
+
+    </div>
+
+
+    <div class="field">
+
+        <label for="slug">
+            Slug
+        </label>
+
+        <input
+            id="slug"
+            name="slug"
+            type="text"
+            value="{{ tag.slug if tag else '' }}"
+            maxlength="100"
+            required
+        >
+
+    </div>
+
+
+    <button type="submit">
+
+        {% if tag %}
+            更新
+        {% else %}
+            作成
+        {% endif %}
+
+    </button>
+
+</form>
+
+</body>
+</html>
