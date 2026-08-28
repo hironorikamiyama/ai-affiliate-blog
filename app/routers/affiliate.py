@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.affiliate import AffiliateProgram
+from app.models.article import Article
+from app.models.blog import Blog
 from app.schemas.affiliate import (
     AffiliateProgramCreate,
     AffiliateProgramUpdate,
@@ -17,10 +19,61 @@ from app.services.article_embedding import (
     get_embedding_similar_articles,
 )
 
+
 router = APIRouter(
     prefix="/programs",
     tags=["Affiliate Programs"],
 )
+
+
+# ========================================
+# CURRENT BLOG
+# ========================================
+
+def get_current_blog(
+    db: Session,
+) -> Blog:
+    blog = (
+        db.query(Blog)
+        .filter(Blog.is_active.is_(True))
+        .order_by(Blog.id.asc())
+        .first()
+    )
+
+    if blog is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Active blog not found",
+        )
+
+    return blog
+
+
+# ========================================
+# GET AFFILIATE PROGRAM FOR CURRENT BLOG
+# ========================================
+
+def get_program_for_blog(
+    db: Session,
+    blog_id: int,
+    program_id: int,
+) -> AffiliateProgram:
+    program = (
+        db.query(AffiliateProgram)
+        .filter(
+            AffiliateProgram.id == program_id,
+            AffiliateProgram.blog_id == blog_id,
+        )
+        .first()
+    )
+
+    if program is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Affiliate program not found",
+        )
+
+    return program
 
 
 # ========================================
@@ -36,7 +89,10 @@ def create_program(
     program: AffiliateProgramCreate,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(db)
+
     db_program = AffiliateProgram(
+        blog_id=current_blog.id,
         name=program.name,
         asp_name=program.asp_name,
         affiliate_url=str(program.affiliate_url),
@@ -108,7 +164,11 @@ def get_programs(
     ),
     db: Session = Depends(get_db),
 ):
-    query = db.query(AffiliateProgram)
+    current_blog = get_current_blog(db)
+
+    query = db.query(AffiliateProgram).filter(
+        AffiliateProgram.blog_id == current_blog.id
+    )
 
     if category is not None:
         query = query.filter(
@@ -167,19 +227,13 @@ def get_program(
     program_id: int,
     db: Session = Depends(get_db),
 ):
-    program = (
-        db.query(AffiliateProgram)
-        .filter(AffiliateProgram.id == program_id)
-        .first()
+    current_blog = get_current_blog(db)
+
+    return get_program_for_blog(
+        db,
+        current_blog.id,
+        program_id,
     )
-
-    if program is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Affiliate program not found",
-        )
-
-    return program
 
 
 # ========================================
@@ -196,17 +250,13 @@ def update_program(
     update_data: AffiliateProgramUpdate,
     db: Session = Depends(get_db),
 ):
-    program = (
-        db.query(AffiliateProgram)
-        .filter(AffiliateProgram.id == program_id)
-        .first()
-    )
+    current_blog = get_current_blog(db)
 
-    if program is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Affiliate program not found",
-        )
+    program = get_program_for_blog(
+        db,
+        current_blog.id,
+        program_id,
+    )
 
     data = update_data.model_dump(
         exclude_unset=True
@@ -263,16 +313,27 @@ def delete_program(
     program_id: int,
     db: Session = Depends(get_db),
 ):
-    program = (
-        db.query(AffiliateProgram)
-        .filter(AffiliateProgram.id == program_id)
+    current_blog = get_current_blog(db)
+
+    program = get_program_for_blog(
+        db,
+        current_blog.id,
+        program_id,
+    )
+
+    referenced_article = (
+        db.query(Article)
+        .filter(
+            Article.blog_id == current_blog.id,
+            Article.affiliate_program_id == program.id,
+        )
         .first()
     )
 
-    if program is None:
+    if referenced_article is not None:
         raise HTTPException(
-            status_code=404,
-            detail="Affiliate program not found",
+            status_code=409,
+            detail="Affiliate program is referenced by an article",
         )
 
     try:

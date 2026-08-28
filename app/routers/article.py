@@ -94,16 +94,16 @@ def create_article(
     # ------------------------------------
     # AffiliateProgramの存在確認
     #
-    # AffiliateProgramは現段階では
-    # blog_idを持っていないため、
-    # Blogスコープ対象外。
+    # current_blogに属するAffiliateProgramのみ許可
     # ------------------------------------
 
     program = (
         db.query(AffiliateProgram)
         .filter(
             AffiliateProgram.id
-            == article.affiliate_program_id
+            == article.affiliate_program_id,
+            AffiliateProgram.blog_id
+            == current_blog.id,
         )
         .first()
     )
@@ -545,15 +545,16 @@ def generate_article_draft(
     # ------------------------------------
     # AffiliateProgramの存在確認
     #
-    # AffiliateProgramは現段階では
-    # Blogスコープ対象外。
+    # current_blogに属するAffiliateProgramのみ許可
     # ------------------------------------
 
     program = (
         db.query(AffiliateProgram)
         .filter(
             AffiliateProgram.id
-            == request.affiliate_program_id
+            == request.affiliate_program_id,
+            AffiliateProgram.blog_id
+            == current_blog.id,
         )
         .first()
     )
@@ -823,7 +824,9 @@ def update_article(
                 AffiliateProgram.id
                 == data[
                     "affiliate_program_id"
-                ]
+                ],
+                AffiliateProgram.blog_id
+                == current_blog.id,
             )
             .first()
         )

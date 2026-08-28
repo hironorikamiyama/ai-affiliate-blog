@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -12,15 +12,19 @@ def utc_now() -> datetime:
 
 class AffiliateProgram(Base):
     __tablename__ = "affiliate_programs"
-    articles = relationship(
-        "Article",
-        back_populates="affiliate_program",
-        cascade="all, delete-orphan",
-    )
 
     id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
+        index=True,
+    )
+
+    blog_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "blogs.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
         index=True,
     )
 
@@ -79,3 +83,12 @@ class AffiliateProgram(Base):
         onupdate=utc_now,
     )
 
+    blog = relationship(
+        "Blog",
+        back_populates="affiliate_programs",
+    )
+
+    articles = relationship(
+        "Article",
+        back_populates="affiliate_program",
+    )

@@ -59,3 +59,8 @@ class Blog(Base):
         "Tag",
         back_populates="blog",
     )
+
+    affiliate_programs = relationship(
+        "AffiliateProgram",
+        back_populates="blog",
+    )
