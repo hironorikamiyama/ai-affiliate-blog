@@ -1,8 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+)
+from sqlalchemy.exc import (
+    IntegrityError,
+    SQLAlchemyError,
+)
 from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
+from app.models.blog import Blog
 from app.models.tag import Tag
 from app.schemas.tag import (
     TagCreate,
@@ -28,6 +37,40 @@ def get_db():
 
 
 # ========================================
+# CURRENT BLOG
+# ========================================
+
+def get_current_blog(
+    db: Session,
+) -> Blog:
+    """
+    現在操作対象となる有効なブログを取得する。
+
+    現段階では有効なブログのうち
+    IDが最も小さいものを使用する。
+    """
+
+    blog = (
+        db.query(Blog)
+        .filter(
+            Blog.is_active.is_(True)
+        )
+        .order_by(
+            Blog.id.asc()
+        )
+        .first()
+    )
+
+    if blog is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Active blog not found",
+        )
+
+    return blog
+
+
+# ========================================
 # CREATE
 # POST /tags/
 # ========================================
@@ -41,7 +84,12 @@ def create_tag(
     tag: TagCreate,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     db_tag = Tag(
+        blog_id=current_blog.id,
         name=tag.name,
         slug=tag.slug,
     )
@@ -58,7 +106,10 @@ def create_tag(
 
         raise HTTPException(
             status_code=409,
-            detail="Tag name or slug already exists",
+            detail=(
+                "Tag name or slug "
+                "already exists in this blog"
+            ),
         )
 
     except SQLAlchemyError:
@@ -91,14 +142,26 @@ def get_tags(
     ),
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     try:
-        query = db.query(Tag)
+        query = (
+            db.query(Tag)
+            .filter(
+                Tag.blog_id
+                == current_blog.id
+            )
+        )
 
         total = query.count()
 
         tags = (
             query
-            .order_by(Tag.id.asc())
+            .order_by(
+                Tag.id.asc()
+            )
             .offset(offset)
             .limit(limit)
             .all()
@@ -133,10 +196,19 @@ def get_tag(
     tag_id: int,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     try:
         tag = (
             db.query(Tag)
-            .filter(Tag.id == tag_id)
+            .filter(
+                Tag.id
+                == tag_id,
+                Tag.blog_id
+                == current_blog.id,
+            )
             .first()
         )
 
@@ -171,10 +243,19 @@ def update_tag(
     update_data: TagUpdate,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     try:
         tag = (
             db.query(Tag)
-            .filter(Tag.id == tag_id)
+            .filter(
+                Tag.id
+                == tag_id,
+                Tag.blog_id
+                == current_blog.id,
+            )
             .first()
         )
 
@@ -186,6 +267,12 @@ def update_tag(
 
         data = update_data.model_dump(
             exclude_unset=True
+        )
+
+        # blog_id はAPI経由では変更しない。
+        data.pop(
+            "blog_id",
+            None,
         )
 
         for field, value in data.items():
@@ -208,7 +295,10 @@ def update_tag(
 
         raise HTTPException(
             status_code=409,
-            detail="Tag name or slug already exists",
+            detail=(
+                "Tag name or slug "
+                "already exists in this blog"
+            ),
         )
 
     except SQLAlchemyError:
@@ -233,10 +323,19 @@ def delete_tag(
     tag_id: int,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     try:
         tag = (
             db.query(Tag)
-            .filter(Tag.id == tag_id)
+            .filter(
+                Tag.id
+                == tag_id,
+                Tag.blog_id
+                == current_blog.id,
+            )
             .first()
         )
 

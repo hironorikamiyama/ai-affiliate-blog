@@ -1,8 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+)
+from sqlalchemy.exc import (
+    IntegrityError,
+    SQLAlchemyError,
+)
 from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
+from app.models.blog import Blog
 from app.models.category import Category
 from app.schemas.category import (
     CategoryCreate,
@@ -28,6 +37,40 @@ def get_db():
 
 
 # ========================================
+# CURRENT BLOG
+# ========================================
+
+def get_current_blog(
+    db: Session,
+) -> Blog:
+    """
+    現在操作対象となる有効なブログを取得する。
+
+    現段階では有効なブログのうち
+    IDが最も小さいものを使用する。
+    """
+
+    blog = (
+        db.query(Blog)
+        .filter(
+            Blog.is_active.is_(True)
+        )
+        .order_by(
+            Blog.id.asc()
+        )
+        .first()
+    )
+
+    if blog is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Active blog not found",
+        )
+
+    return blog
+
+
+# ========================================
 # CREATE
 # POST /categories/
 # ========================================
@@ -41,7 +84,12 @@ def create_category(
     category: CategoryCreate,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     db_category = Category(
+        blog_id=current_blog.id,
         name=category.name,
         slug=category.slug,
         description=category.description,
@@ -59,7 +107,10 @@ def create_category(
 
         raise HTTPException(
             status_code=409,
-            detail="Category name or slug already exists",
+            detail=(
+                "Category name or slug "
+                "already exists in this blog"
+            ),
         )
 
     except SQLAlchemyError:
@@ -92,14 +143,26 @@ def get_categories(
     ),
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     try:
-        query = db.query(Category)
+        query = (
+            db.query(Category)
+            .filter(
+                Category.blog_id
+                == current_blog.id
+            )
+        )
 
         total = query.count()
 
         categories = (
             query
-            .order_by(Category.id.asc())
+            .order_by(
+                Category.id.asc()
+            )
             .offset(offset)
             .limit(limit)
             .all()
@@ -134,10 +197,19 @@ def get_category(
     category_id: int,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     try:
         category = (
             db.query(Category)
-            .filter(Category.id == category_id)
+            .filter(
+                Category.id
+                == category_id,
+                Category.blog_id
+                == current_blog.id,
+            )
             .first()
         )
 
@@ -172,10 +244,19 @@ def update_category(
     update_data: CategoryUpdate,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     try:
         category = (
             db.query(Category)
-            .filter(Category.id == category_id)
+            .filter(
+                Category.id
+                == category_id,
+                Category.blog_id
+                == current_blog.id,
+            )
             .first()
         )
 
@@ -187,6 +268,12 @@ def update_category(
 
         data = update_data.model_dump(
             exclude_unset=True
+        )
+
+        # blog_id はAPI経由では変更しない。
+        data.pop(
+            "blog_id",
+            None,
         )
 
         for field, value in data.items():
@@ -209,7 +296,10 @@ def update_category(
 
         raise HTTPException(
             status_code=409,
-            detail="Category name or slug already exists",
+            detail=(
+                "Category name or slug "
+                "already exists in this blog"
+            ),
         )
 
     except SQLAlchemyError:
@@ -234,10 +324,19 @@ def delete_category(
     category_id: int,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     try:
         category = (
             db.query(Category)
-            .filter(Category.id == category_id)
+            .filter(
+                Category.id
+                == category_id,
+                Category.blog_id
+                == current_blog.id,
+            )
             .first()
         )
 
@@ -258,7 +357,9 @@ def delete_category(
 
         raise HTTPException(
             status_code=409,
-            detail="Category is currently in use",
+            detail=(
+                "Category is currently in use"
+            ),
         )
 
     except SQLAlchemyError:

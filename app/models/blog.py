@@ -54,3 +54,8 @@ class Blog(Base):
         "Category",
         back_populates="blog",
     )
+
+    tags = relationship(
+        "Tag",
+        back_populates="blog",
+    )

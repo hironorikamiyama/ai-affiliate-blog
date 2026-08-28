@@ -6,6 +6,7 @@ from app.db.database import get_db
 
 from app.models.affiliate import AffiliateProgram
 from app.models.article import Article
+from app.models.blog import Blog
 from app.models.category import Category
 from app.models.tag import Tag
 
@@ -29,10 +30,48 @@ from app.services.article_embedding import (
 
 from app.services.ai_writer import generate_article
 
+
 router = APIRouter(
     prefix="/articles",
     tags=["Articles"],
 )
+
+
+# ========================================
+# CURRENT BLOG
+# ========================================
+
+def get_current_blog(
+    db: Session,
+) -> Blog:
+    """
+    現在対象となっている有効なBlogを取得する。
+
+    現段階では有効なBlogのうち
+    IDが最も小さいものを使用する。
+
+    public側のcurrent blog判定と
+    同じルールを使用する。
+    """
+
+    blog = (
+        db.query(Blog)
+        .filter(
+            Blog.is_active.is_(True)
+        )
+        .order_by(
+            Blog.id.asc()
+        )
+        .first()
+    )
+
+    if blog is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Active blog not found",
+        )
+
+    return blog
 
 
 # ========================================
@@ -48,7 +87,18 @@ def create_article(
     article: ArticleCreate,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
+    # ------------------------------------
     # AffiliateProgramの存在確認
+    #
+    # AffiliateProgramは現段階では
+    # blog_idを持っていないため、
+    # Blogスコープ対象外。
+    # ------------------------------------
+
     program = (
         db.query(AffiliateProgram)
         .filter(
@@ -64,11 +114,21 @@ def create_article(
             detail="Affiliate program not found",
         )
 
+    # ------------------------------------
     # Categoryの存在確認
+    #
+    # current_blogに属するCategoryのみ許可
+    # ------------------------------------
+
     if article.category_id is not None:
         category = (
             db.query(Category)
-            .filter(Category.id == article.category_id)
+            .filter(
+                Category.id
+                == article.category_id,
+                Category.blog_id
+                == current_blog.id,
+            )
             .first()
         )
 
@@ -78,19 +138,38 @@ def create_article(
                 detail="Category not found",
             )
 
+    # ------------------------------------
     # Tagの存在確認
+    #
+    # current_blogに属するTagのみ許可
+    # ------------------------------------
+
     tags = []
 
     if article.tag_ids:
-        unique_tag_ids = list(dict.fromkeys(article.tag_ids))
+        unique_tag_ids = list(
+            dict.fromkeys(
+                article.tag_ids
+            )
+        )
 
         tags = (
             db.query(Tag)
-            .filter(Tag.id.in_(unique_tag_ids))
+            .filter(
+                Tag.id.in_(
+                    unique_tag_ids
+                ),
+                Tag.blog_id
+                == current_blog.id,
+            )
             .all()
         )
 
-        found_tag_ids = {tag.id for tag in tags}
+        found_tag_ids = {
+            tag.id
+            for tag in tags
+        }
+
         missing_tag_ids = [
             tag_id
             for tag_id in unique_tag_ids
@@ -100,13 +179,26 @@ def create_article(
         if missing_tag_ids:
             raise HTTPException(
                 status_code=404,
-                detail=f"Tag not found: {missing_tag_ids}",
+                detail=(
+                    "Tag not found: "
+                    f"{missing_tag_ids}"
+                ),
             )
 
+    # ------------------------------------
     # slug重複確認
+    #
+    # Article.slugは現在Model上で
+    # global UNIQUEなので、
+    # 現段階では全Blogを対象に確認する。
+    # ------------------------------------
+
     existing_slug = (
         db.query(Article)
-        .filter(Article.slug == article.slug)
+        .filter(
+            Article.slug
+            == article.slug
+        )
         .first()
     )
 
@@ -116,13 +208,22 @@ def create_article(
             detail="Article slug already exists",
         )
 
+    # ------------------------------------
+    # Article生成
+    # ------------------------------------
+
     db_article = Article(
-        affiliate_program_id=article.affiliate_program_id,
+        blog_id=current_blog.id,
+        affiliate_program_id=(
+            article.affiliate_program_id
+        ),
         category_id=article.category_id,
         title=article.title,
         slug=article.slug,
         keyword=article.keyword,
-        meta_description=article.meta_description,
+        meta_description=(
+            article.meta_description
+        ),
         body=article.body,
         status=article.status.value,
     )
@@ -140,7 +241,10 @@ def create_article(
 
         raise HTTPException(
             status_code=409,
-            detail="Article conflicts with existing data",
+            detail=(
+                "Article conflicts "
+                "with existing data"
+            ),
         )
 
     except SQLAlchemyError:
@@ -152,6 +256,7 @@ def create_article(
         )
 
     return db_article
+
 
 # ========================================
 # LIST
@@ -184,11 +289,22 @@ def get_articles(
     ),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Article)
+    current_blog = get_current_blog(
+        db=db,
+    )
+
+    query = (
+        db.query(Article)
+        .filter(
+            Article.blog_id
+            == current_blog.id
+        )
+    )
 
     if status is not None:
         query = query.filter(
-            Article.status == status.value
+            Article.status
+            == status.value
         )
 
     if affiliate_program_id is not None:
@@ -199,14 +315,18 @@ def get_articles(
 
     if keyword is not None:
         query = query.filter(
-            Article.keyword.contains(keyword)
+            Article.keyword.contains(
+                keyword
+            )
         )
 
     total = query.count()
 
     articles = (
         query
-        .order_by(Article.id.asc())
+        .order_by(
+            Article.id.asc()
+        )
         .offset(offset)
         .limit(limit)
         .all()
@@ -236,9 +356,17 @@ def get_article_by_slug(
     slug: str,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     article = (
         db.query(Article)
-        .filter(Article.slug == slug)
+        .filter(
+            Article.slug == slug,
+            Article.blog_id
+            == current_blog.id,
+        )
         .first()
     )
 
@@ -250,16 +378,20 @@ def get_article_by_slug(
 
     return article
 
+
 # ========================================
 # GET BY similar
 # GET /{article_id}/similar
-
+#
 # IMPORTANT:
 # /{article_id}/similar/embedding より前に定義する
 # ========================================
+
 @router.get(
     "/{article_id}/similar",
-    response_model=list[SimilarArticleResponse],
+    response_model=list[
+        SimilarArticleResponse
+    ],
 )
 def get_article_similarities(
     article_id: int,
@@ -270,9 +402,21 @@ def get_article_similarities(
     ),
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
+    # ------------------------------------
+    # 対象記事
+    # ------------------------------------
+
     target_article = (
         db.query(Article)
-        .filter(Article.id == article_id)
+        .filter(
+            Article.id == article_id,
+            Article.blog_id
+            == current_blog.id,
+        )
         .first()
     )
 
@@ -282,9 +426,19 @@ def get_article_similarities(
             detail="Article not found",
         )
 
+    # ------------------------------------
+    # 類似度比較対象も同一Blogのみ
+    # ------------------------------------
+
     articles = (
         db.query(Article)
-        .order_by(Article.id.asc())
+        .filter(
+            Article.blog_id
+            == current_blog.id
+        )
+        .order_by(
+            Article.id.asc()
+        )
         .all()
     )
 
@@ -294,17 +448,20 @@ def get_article_similarities(
         limit=limit,
     )
 
+
 # ========================================
 # GET BY similar
 # GET /{article_id}/similar/embedding
-
+#
 # IMPORTANT:
 # /{article_id} より前に定義する
 # ========================================
 
 @router.get(
     "/{article_id}/similar/embedding",
-    response_model=list[SimilarArticleResponse],
+    response_model=list[
+        SimilarArticleResponse
+    ],
 )
 def get_article_embedding_similarities(
     article_id: int,
@@ -320,9 +477,21 @@ def get_article_embedding_similarities(
     ),
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
+    # ------------------------------------
+    # 対象記事
+    # ------------------------------------
+
     target_article = (
         db.query(Article)
-        .filter(Article.id == article_id)
+        .filter(
+            Article.id == article_id,
+            Article.blog_id
+            == current_blog.id,
+        )
         .first()
     )
 
@@ -332,9 +501,19 @@ def get_article_embedding_similarities(
             detail="Article not found",
         )
 
+    # ------------------------------------
+    # Embedding比較対象も同一Blogのみ
+    # ------------------------------------
+
     articles = (
         db.query(Article)
-        .order_by(Article.id.asc())
+        .filter(
+            Article.blog_id
+            == current_blog.id
+        )
+        .order_by(
+            Article.id.asc()
+        )
         .all()
     )
 
@@ -359,7 +538,17 @@ def generate_article_draft(
     request: ArticleGenerateRequest,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
+    # ------------------------------------
     # AffiliateProgramの存在確認
+    #
+    # AffiliateProgramは現段階では
+    # Blogスコープ対象外。
+    # ------------------------------------
+
     program = (
         db.query(AffiliateProgram)
         .filter(
@@ -375,12 +564,18 @@ def generate_article_draft(
             detail="Affiliate program not found",
         )
 
+    # ------------------------------------
     # Categoryの存在確認
+    # ------------------------------------
+
     if request.category_id is not None:
         category = (
             db.query(Category)
             .filter(
-                Category.id == request.category_id
+                Category.id
+                == request.category_id,
+                Category.blog_id
+                == current_blog.id,
             )
             .first()
         )
@@ -391,22 +586,34 @@ def generate_article_draft(
                 detail="Category not found",
             )
 
+    # ------------------------------------
     # Tagの存在確認
+    # ------------------------------------
+
     tags = []
 
     if request.tag_ids:
         unique_tag_ids = list(
-            dict.fromkeys(request.tag_ids)
+            dict.fromkeys(
+                request.tag_ids
+            )
         )
 
         tags = (
             db.query(Tag)
-            .filter(Tag.id.in_(unique_tag_ids))
+            .filter(
+                Tag.id.in_(
+                    unique_tag_ids
+                ),
+                Tag.blog_id
+                == current_blog.id,
+            )
             .all()
         )
 
         found_tag_ids = {
-            tag.id for tag in tags
+            tag.id
+            for tag in tags
         }
 
         missing_tag_ids = [
@@ -418,10 +625,16 @@ def generate_article_draft(
         if missing_tag_ids:
             raise HTTPException(
                 status_code=404,
-                detail=f"Tag not found: {missing_tag_ids}",
+                detail=(
+                    "Tag not found: "
+                    f"{missing_tag_ids}"
+                ),
             )
 
+    # ------------------------------------
     # AI記事生成
+    # ------------------------------------
+
     try:
         generated = generate_article(
             program=program,
@@ -431,14 +644,24 @@ def generate_article_draft(
     except Exception as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to generate article: {exc}",
+            detail=(
+                "Failed to generate article: "
+                f"{exc}"
+            ),
         ) from exc
 
+    # ------------------------------------
     # slug重複確認
+    #
+    # Article.slugはglobal UNIQUEのため
+    # 全Blogを対象に確認する。
+    # ------------------------------------
+
     existing_slug = (
         db.query(Article)
         .filter(
-            Article.slug == generated["slug"]
+            Article.slug
+            == generated["slug"]
         )
         .first()
     )
@@ -446,16 +669,28 @@ def generate_article_draft(
     if existing_slug is not None:
         raise HTTPException(
             status_code=409,
-            detail="Generated article slug already exists",
+            detail=(
+                "Generated article slug "
+                "already exists"
+            ),
         )
 
+    # ------------------------------------
+    # Article生成
+    # ------------------------------------
+
     db_article = Article(
-        affiliate_program_id=request.affiliate_program_id,
+        blog_id=current_blog.id,
+        affiliate_program_id=(
+            request.affiliate_program_id
+        ),
         category_id=request.category_id,
         title=generated["title"],
         slug=generated["slug"],
         keyword=request.keyword,
-        meta_description=generated["meta_description"],
+        meta_description=(
+            generated["meta_description"]
+        ),
         body=generated["body"],
         status=ArticleStatus.draft.value,
     )
@@ -472,7 +707,10 @@ def generate_article_draft(
 
         raise HTTPException(
             status_code=409,
-            detail="Generated article conflicts with existing data",
+            detail=(
+                "Generated article conflicts "
+                "with existing data"
+            ),
         )
 
     except SQLAlchemyError:
@@ -480,7 +718,10 @@ def generate_article_draft(
 
         raise HTTPException(
             status_code=500,
-            detail="Failed to save generated article",
+            detail=(
+                "Failed to save "
+                "generated article"
+            ),
         )
 
     return db_article
@@ -499,9 +740,17 @@ def get_article(
     article_id: int,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     article = (
         db.query(Article)
-        .filter(Article.id == article_id)
+        .filter(
+            Article.id == article_id,
+            Article.blog_id
+            == current_blog.id,
+        )
         .first()
     )
 
@@ -528,9 +777,21 @@ def update_article(
     update_data: ArticleUpdate,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
+    # ------------------------------------
+    # current_blogの記事だけ取得
+    # ------------------------------------
+
     article = (
         db.query(Article)
-        .filter(Article.id == article_id)
+        .filter(
+            Article.id == article_id,
+            Article.blog_id
+            == current_blog.id,
+        )
         .first()
     )
 
@@ -545,15 +806,24 @@ def update_article(
     )
 
     # tag_idsはArticleの通常カラムではないので分離
-    tag_ids = data.pop("tag_ids", None)
+    tag_ids = data.pop(
+        "tag_ids",
+        None,
+    )
 
-    # AffiliateProgramを変更する場合は存在確認
+    # ------------------------------------
+    # AffiliateProgramを変更する場合
+    # 存在確認
+    # ------------------------------------
+
     if "affiliate_program_id" in data:
         program = (
             db.query(AffiliateProgram)
             .filter(
                 AffiliateProgram.id
-                == data["affiliate_program_id"]
+                == data[
+                    "affiliate_program_id"
+                ]
             )
             .first()
         )
@@ -561,10 +831,18 @@ def update_article(
         if program is None:
             raise HTTPException(
                 status_code=404,
-                detail="Affiliate program not found",
+                detail=(
+                    "Affiliate program "
+                    "not found"
+                ),
             )
 
-    # Categoryを変更する場合は存在確認
+    # ------------------------------------
+    # Categoryを変更する場合
+    #
+    # current_blogのCategoryだけ許可
+    # ------------------------------------
+
     if (
         "category_id" in data
         and data["category_id"] is not None
@@ -572,7 +850,10 @@ def update_article(
         category = (
             db.query(Category)
             .filter(
-                Category.id == data["category_id"]
+                Category.id
+                == data["category_id"],
+                Category.blog_id
+                == current_blog.id,
             )
             .first()
         )
@@ -583,43 +864,74 @@ def update_article(
                 detail="Category not found",
             )
 
-    # Tagを変更する場合は存在確認
+    # ------------------------------------
+    # Tagを変更する場合
+    #
+    # current_blogのTagだけ許可
+    # ------------------------------------
+
     tags = None
 
     if tag_ids is not None:
-        unique_tag_ids = list(dict.fromkeys(tag_ids))
+        unique_tag_ids = list(
+            dict.fromkeys(
+                tag_ids
+            )
+        )
 
         if unique_tag_ids:
             tags = (
                 db.query(Tag)
-                .filter(Tag.id.in_(unique_tag_ids))
+                .filter(
+                    Tag.id.in_(
+                        unique_tag_ids
+                    ),
+                    Tag.blog_id
+                    == current_blog.id,
+                )
                 .all()
             )
 
-            found_tag_ids = {tag.id for tag in tags}
+            found_tag_ids = {
+                tag.id
+                for tag in tags
+            }
+
             missing_tag_ids = [
                 tag_id
                 for tag_id in unique_tag_ids
-                if tag_id not in found_tag_ids
+                if tag_id
+                not in found_tag_ids
             ]
 
             if missing_tag_ids:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Tag not found: {missing_tag_ids}",
+                    detail=(
+                        "Tag not found: "
+                        f"{missing_tag_ids}"
+                    ),
                 )
 
         else:
             # tag_ids=[] なら全Tag解除
             tags = []
 
+    # ------------------------------------
     # slugを変更する場合は重複確認
+    #
+    # Article.slugはglobal UNIQUEなので
+    # Blogを跨いで確認する。
+    # ------------------------------------
+
     if "slug" in data:
         existing_slug = (
             db.query(Article)
             .filter(
-                Article.slug == data["slug"],
-                Article.id != article_id,
+                Article.slug
+                == data["slug"],
+                Article.id
+                != article_id,
             )
             .first()
         )
@@ -627,17 +939,28 @@ def update_article(
         if existing_slug is not None:
             raise HTTPException(
                 status_code=409,
-                detail="Article slug already exists",
+                detail=(
+                    "Article slug "
+                    "already exists"
+                ),
             )
 
+    # ------------------------------------
     # Enum → DB保存用文字列
+    # ------------------------------------
+
     if (
         "status" in data
         and data["status"] is not None
     ):
-        data["status"] = data["status"].value
+        data["status"] = (
+            data["status"].value
+        )
 
+    # ------------------------------------
     # Article通常カラムを更新
+    # ------------------------------------
+
     for field, value in data.items():
         setattr(
             article,
@@ -645,7 +968,10 @@ def update_article(
             value,
         )
 
+    # ------------------------------------
     # Many-to-Many Tag更新
+    # ------------------------------------
+
     if tags is not None:
         article.tags = tags
 
@@ -658,7 +984,10 @@ def update_article(
 
         raise HTTPException(
             status_code=409,
-            detail="Article conflicts with existing data",
+            detail=(
+                "Article conflicts "
+                "with existing data"
+            ),
         )
 
     except SQLAlchemyError:
@@ -670,6 +999,7 @@ def update_article(
         )
 
     return article
+
 
 # ========================================
 # DELETE
@@ -684,9 +1014,17 @@ def delete_article(
     article_id: int,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_blog(
+        db=db,
+    )
+
     article = (
         db.query(Article)
-        .filter(Article.id == article_id)
+        .filter(
+            Article.id == article_id,
+            Article.blog_id
+            == current_blog.id,
+        )
         .first()
     )
 
@@ -705,7 +1043,10 @@ def delete_article(
 
         raise HTTPException(
             status_code=409,
-            detail="Article is referenced by other data",
+            detail=(
+                "Article is referenced "
+                "by other data"
+            ),
         )
 
     except SQLAlchemyError:
