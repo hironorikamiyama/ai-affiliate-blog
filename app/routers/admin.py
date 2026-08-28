@@ -15,6 +15,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from datetime import datetime, timezone
+
 from app.config import settings
 from app.db.database import get_db
 from app.models.affiliate import AffiliateProgram
@@ -24,6 +26,8 @@ from app.models.category import Category
 from app.models.blog import Blog
 from app.models.blog_membership import BlogMembership
 from app.models.tag import Tag
+from app.models.user import User
+from app.services.auth import verify_password
 from app.services.ai_writer import generate_article
 from app.services.seo_analyzer import analyze_seo
 from app.services.seo_rewriter import rewrite_article_for_seo
@@ -62,6 +66,127 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
 MAX_IMAGE_FILE_SIZE = (
     5 * 1024 * 1024
 )
+
+# ========================================
+# ADMIN LOGIN
+# GET /admin/login
+# ========================================
+
+@router.get(
+    "/login",
+    response_class=HTMLResponse,
+)
+def admin_login_form(
+    request: Request,
+):
+    if request.session.get("user_id") is not None:
+        return RedirectResponse(
+            url="/admin/articles",
+            status_code=303,
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/login.html",
+        context={
+            "error": None,
+        },
+    )
+
+
+# ========================================
+# ADMIN LOGIN
+# POST /admin/login
+# ========================================
+
+@router.post(
+    "/login",
+    response_class=HTMLResponse,
+)
+def admin_login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    username = username.strip()
+
+    user = (
+        db.query(User)
+        .filter(
+            User.username == username,
+            User.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if (
+        user is None
+        or user.role not in {"admin", "editor"}
+        or not verify_password(
+            password,
+            user.password_hash,
+        )
+    ):
+        request.session.clear()
+
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/login.html",
+            context={
+                "error": (
+                    "ユーザー名またはパスワードが"
+                    "正しくありません。"
+                ),
+            },
+            status_code=401,
+        )
+
+    request.session.clear()
+    request.session["user_id"] = user.id
+    request.session["role"] = user.role
+
+    user.last_login_at = datetime.now(
+        timezone.utc
+    )
+
+    try:
+        db.commit()
+        db.refresh(user)
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+        request.session.clear()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update login information",
+        ) from exc
+
+    return RedirectResponse(
+        url="/admin/articles",
+        status_code=303,
+    )
+
+
+# ========================================
+# ADMIN LOGOUT
+# POST /admin/logout
+# ========================================
+
+@router.post(
+    "/logout",
+)
+def admin_logout(
+    request: Request,
+):
+    request.session.clear()
+
+    return RedirectResponse(
+        url="/admin/login",
+        status_code=303,
+    )
+
 
 # ========================================
 # CURRENT ADMIN BLOG
@@ -205,6 +330,7 @@ def admin_article_edit(
 
     tags = (
         db.query(Tag)
+        .filter(Tag.blog_id == current_blog.id)
         .order_by(
             Tag.name.asc()
         )
@@ -351,7 +477,8 @@ def admin_article_update(
             .filter(
                 Tag.id.in_(
                     unique_tag_ids
-                )
+                ),
+                Tag.blog_id == current_blog.id,
             )
             .all()
         )
@@ -873,6 +1000,7 @@ def admin_article_seo_analysis(
 
     tags = (
         db.query(Tag)
+        .filter(Tag.blog_id == current_blog.id)
         .order_by(
             Tag.name.asc()
         )
@@ -999,6 +1127,7 @@ def admin_article_seo_rewrite(
 
     tags = (
         db.query(Tag)
+        .filter(Tag.blog_id == current_blog.id)
         .order_by(
             Tag.name.asc()
         )
@@ -1391,6 +1520,9 @@ def admin_article_generate_form(
 
     affiliate_programs = (
         db.query(AffiliateProgram)
+        .filter(
+            AffiliateProgram.blog_id == current_blog.id
+        )
         .order_by(
             AffiliateProgram.name.asc()
         )
@@ -1408,6 +1540,7 @@ def admin_article_generate_form(
 
     tags = (
         db.query(Tag)
+        .filter(Tag.blog_id == current_blog.id)
         .order_by(
             Tag.name.asc()
         )
@@ -1456,7 +1589,9 @@ def admin_article_generate(
         db.query(AffiliateProgram)
         .filter(
             AffiliateProgram.id
-            == affiliate_program_id
+            == affiliate_program_id,
+            AffiliateProgram.blog_id
+            == current_blog.id,
         )
         .first()
     )
@@ -1504,7 +1639,8 @@ def admin_article_generate(
             .filter(
                 Tag.id.in_(
                     unique_tag_ids
-                )
+                ),
+                Tag.blog_id == current_blog.id,
             )
             .all()
         )
@@ -1644,8 +1780,16 @@ def admin_affiliate_program_list(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     programs = (
         db.query(AffiliateProgram)
+        .filter(
+            AffiliateProgram.blog_id == current_blog.id
+        )
         .order_by(
             AffiliateProgram.updated_at.desc()
         )
@@ -1691,6 +1835,7 @@ def admin_affiliate_program_create_form(
     "/affiliate-programs/new",
 )
 def admin_affiliate_program_create(
+    request: Request,
     name: str = Form(...),
     asp_name: str = Form(...),
     affiliate_url: str = Form(...),
@@ -1701,6 +1846,11 @@ def admin_affiliate_program_create(
     description: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     reward_amount_value = None
 
     if reward_amount:
@@ -1715,6 +1865,7 @@ def admin_affiliate_program_create(
             ) from exc
 
     program = AffiliateProgram(
+        blog_id=current_blog.id,
         name=name,
         asp_name=asp_name,
         affiliate_url=affiliate_url,
@@ -1758,10 +1909,16 @@ def admin_affiliate_program_edit_form(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     program = (
         db.query(AffiliateProgram)
         .filter(
-            AffiliateProgram.id == program_id
+            AffiliateProgram.id == program_id,
+            AffiliateProgram.blog_id == current_blog.id,
         )
         .first()
     )
@@ -1790,6 +1947,7 @@ def admin_affiliate_program_edit_form(
     "/affiliate-programs/{program_id}/edit",
 )
 def admin_affiliate_program_update(
+    request: Request,
     program_id: int,
     name: str = Form(...),
     asp_name: str = Form(...),
@@ -1801,10 +1959,16 @@ def admin_affiliate_program_update(
     description: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     program = (
         db.query(AffiliateProgram)
         .filter(
-            AffiliateProgram.id == program_id
+            AffiliateProgram.id == program_id,
+            AffiliateProgram.blog_id == current_blog.id,
         )
         .first()
     )
@@ -1853,7 +2017,7 @@ def admin_affiliate_program_update(
         url="/admin/affiliate-programs",
         status_code=303,
     )
-    
+
 # ========================================
 # AFFILIATE PROGRAM DELETE
 # POST /admin/affiliate-programs/{program_id}/delete
@@ -1863,13 +2027,20 @@ def admin_affiliate_program_update(
     "/affiliate-programs/{program_id}/delete",
 )
 def admin_affiliate_program_delete(
+    request: Request,
     program_id: int,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_admin_blog(
+        request=request,
+        db=db,
+    )
+
     program = (
         db.query(AffiliateProgram)
         .filter(
-            AffiliateProgram.id == program_id
+            AffiliateProgram.id == program_id,
+            AffiliateProgram.blog_id == current_blog.id,
         )
         .first()
     )
@@ -1883,7 +2054,8 @@ def admin_affiliate_program_delete(
     linked_article = (
         db.query(Article)
         .filter(
-            Article.affiliate_program_id == program_id
+            Article.affiliate_program_id == program_id,
+            Article.blog_id == current_blog.id,
         )
         .first()
     )
