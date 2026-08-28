@@ -1,8 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+)
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.article import Article
+from app.models.blog import Blog
 from app.models.category import Category
 from app.models.tag import Tag
 from app.schemas.article import (
@@ -14,10 +21,50 @@ from app.services.affiliate_link_renderer import (
     expand_affiliate_links,
 )
 
+
 router = APIRouter(
     prefix="/public/articles",
     tags=["Public Articles"],
 )
+
+
+# ========================================
+# CURRENT PUBLIC BLOG
+# ========================================
+
+def get_current_public_blog(
+    db: Session,
+) -> Blog:
+    """
+    公開APIで現在対象となる有効なBlogを取得する。
+
+    現段階では有効なBlogのうち
+    IDが最も小さいものを使用する。
+    """
+
+    blog = (
+        db.query(Blog)
+        .filter(
+            Blog.is_active.is_(True)
+        )
+        .order_by(
+            Blog.id.asc()
+        )
+        .first()
+    )
+
+    if blog is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Active blog not found",
+        )
+
+    return blog
+
+
+# ========================================
+# PUBLIC RESPONSE
+# ========================================
 
 def build_public_article_response(
     article: Article,
@@ -68,11 +115,19 @@ def get_public_articles(
     ),
     db: Session = Depends(get_db),
 ):
-    # 公開済み記事だけを対象にする
+    current_blog = get_current_public_blog(
+        db=db
+    )
+
+    # ====================================
+    # Published articles in current Blog
+    # ====================================
+
     query = (
         db.query(Article)
         .filter(
-            Article.status == "published"
+            Article.blog_id == current_blog.id,
+            Article.status == "published",
         )
     )
 
@@ -83,7 +138,12 @@ def get_public_articles(
     if category_slug is not None:
         query = query.filter(
             Article.category.has(
-                Category.slug == category_slug
+                and_(
+                    Category.blog_id
+                    == current_blog.id,
+                    Category.slug
+                    == category_slug,
+                )
             )
         )
 
@@ -94,7 +154,12 @@ def get_public_articles(
     if tag_slug is not None:
         query = query.filter(
             Article.tags.any(
-                Tag.slug == tag_slug
+                and_(
+                    Tag.blog_id
+                    == current_blog.id,
+                    Tag.slug
+                    == tag_slug,
+                )
             )
         )
 
@@ -137,9 +202,14 @@ def get_public_article_by_slug(
     slug: str,
     db: Session = Depends(get_db),
 ):
+    current_blog = get_current_public_blog(
+        db=db
+    )
+
     article = (
         db.query(Article)
         .filter(
+            Article.blog_id == current_blog.id,
             Article.slug == slug,
             Article.status == "published",
         )
