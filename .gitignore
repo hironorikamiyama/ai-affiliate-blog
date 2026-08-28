@@ -19,3 +19,6 @@ __pycache__/
 uploads/*
 !uploads/.gitkeep
 
+*.db.bak*
+# Local database backups
+*.db.bak*
