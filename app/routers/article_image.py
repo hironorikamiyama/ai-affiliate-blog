@@ -16,6 +16,7 @@ from app.config import settings
 from app.db.database import get_db
 from app.models.article import Article
 from app.models.article_image import ArticleImage
+from app.models.blog import Blog
 from app.schemas.article_image import (
     ArticleImageResponse,
     ArticleImageUpdate,
@@ -43,6 +44,90 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 
 # ========================================
+# CURRENT BLOG
+# ========================================
+
+def get_current_blog(
+    db: Session,
+) -> Blog:
+    blog = (
+        db.query(Blog)
+        .filter(
+            Blog.is_active.is_(True)
+        )
+        .order_by(Blog.id.asc())
+        .first()
+    )
+
+    if blog is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Active blog not found",
+        )
+
+    return blog
+
+
+# ========================================
+# ARTICLE OWNERSHIP CHECK
+# ========================================
+
+def get_article_for_blog(
+    db: Session,
+    blog_id: int,
+    article_id: int,
+) -> Article:
+    article = (
+        db.query(Article)
+        .filter(
+            Article.id == article_id,
+            Article.blog_id == blog_id,
+        )
+        .first()
+    )
+
+    if article is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article not found",
+        )
+
+    return article
+
+
+# ========================================
+# IMAGE OWNERSHIP CHECK
+# ========================================
+
+def get_image_for_blog(
+    db: Session,
+    blog_id: int,
+    image_id: int,
+) -> ArticleImage:
+    image = (
+        db.query(ArticleImage)
+        .join(
+            Article,
+            Article.id
+            == ArticleImage.article_id,
+        )
+        .filter(
+            ArticleImage.id == image_id,
+            Article.blog_id == blog_id,
+        )
+        .first()
+    )
+
+    if image is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Article image not found",
+        )
+
+    return image
+
+
+# ========================================
 # CREATE
 # POST /articles/{article_id}/images
 # ========================================
@@ -60,18 +145,13 @@ async def upload_article_image(
     is_featured: bool = Form(default=False),
     db: Session = Depends(get_db),
 ):
-    # Article存在確認
-    article = (
-        db.query(Article)
-        .filter(Article.id == article_id)
-        .first()
-    )
+    current_blog = get_current_blog(db)
 
-    if article is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Article not found",
-        )
+    article = get_article_for_blog(
+        db=db,
+        blog_id=current_blog.id,
+        article_id=article_id,
+    )
 
     # MIME type確認
     if file.content_type not in ALLOWED_CONTENT_TYPES:
@@ -106,7 +186,7 @@ async def upload_article_image(
     )
 
     article_directory = (
-        UPLOAD_DIR / str(article_id)
+        UPLOAD_DIR / str(article.id)
     )
 
     file_path = (
@@ -144,7 +224,7 @@ async def upload_article_image(
                 db.query(ArticleImage)
                 .filter(
                     ArticleImage.article_id
-                    == article_id,
+                    == article.id,
                     ArticleImage.is_featured.is_(
                         True
                     ),
@@ -159,7 +239,7 @@ async def upload_article_image(
             )
 
         db_image = ArticleImage(
-            article_id=article_id,
+            article_id=article.id,
             file_path=str(file_path),
             original_filename=(
                 file.filename
@@ -221,23 +301,19 @@ def get_article_images(
     article_id: int,
     db: Session = Depends(get_db),
 ):
-    article = (
-        db.query(Article)
-        .filter(Article.id == article_id)
-        .first()
-    )
+    current_blog = get_current_blog(db)
 
-    if article is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Article not found",
-        )
+    article = get_article_for_blog(
+        db=db,
+        blog_id=current_blog.id,
+        article_id=article_id,
+    )
 
     images = (
         db.query(ArticleImage)
         .filter(
             ArticleImage.article_id
-            == article_id
+            == article.id
         )
         .order_by(
             ArticleImage.position.asc(),
@@ -263,19 +339,13 @@ def update_article_image(
     update_data: ArticleImageUpdate,
     db: Session = Depends(get_db),
 ):
-    image = (
-        db.query(ArticleImage)
-        .filter(
-            ArticleImage.id == image_id
-        )
-        .first()
-    )
+    current_blog = get_current_blog(db)
 
-    if image is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Article image not found",
-        )
+    image = get_image_for_blog(
+        db=db,
+        blog_id=current_blog.id,
+        image_id=image_id,
+    )
 
     data = update_data.model_dump(
         exclude_unset=True
@@ -347,19 +417,13 @@ def delete_article_image(
     image_id: int,
     db: Session = Depends(get_db),
 ):
-    image = (
-        db.query(ArticleImage)
-        .filter(
-            ArticleImage.id == image_id
-        )
-        .first()
-    )
+    current_blog = get_current_blog(db)
 
-    if image is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Article image not found",
-        )
+    image = get_image_for_blog(
+        db=db,
+        blog_id=current_blog.id,
+        image_id=image_id,
+    )
 
     file_path = Path(image.file_path)
 

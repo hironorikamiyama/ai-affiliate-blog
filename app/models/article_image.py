@@ -16,7 +16,10 @@ class ArticleImage(Base):
     )
 
     article_id: Mapped[int] = mapped_column(
-        ForeignKey("articles.id"),
+        ForeignKey(
+            "articles.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
@@ -67,4 +70,3 @@ class ArticleImage(Base):
     @property
     def image_url(self) -> str:
         return f"/{self.file_path.lstrip('/')}"
-    
