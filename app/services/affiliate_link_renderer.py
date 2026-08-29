@@ -17,10 +17,12 @@ AFFILIATE_LINK_PATTERN = re.compile(
 def expand_affiliate_links(
     body: str,
     db: Session,
+    blog_id: int,
 ) -> str:
     """
     {{AFFILIATE_LINK:1}}
     のようなプレースホルダーを
+    指定Blogに属する
     AffiliateProgram.affiliate_url に置換する。
     """
 
@@ -40,7 +42,8 @@ def expand_affiliate_links(
     programs = (
         db.query(AffiliateProgram)
         .filter(
-            AffiliateProgram.id.in_(program_ids)
+            AffiliateProgram.id.in_(program_ids),
+            AffiliateProgram.blog_id == blog_id,
         )
         .all()
     )

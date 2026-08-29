@@ -79,6 +79,7 @@ def build_public_article_response(
             "body": expand_affiliate_links(
                 body=response.body,
                 db=db,
+                blog_id=article.blog_id,
             )
         }
     )

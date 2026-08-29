@@ -359,6 +359,7 @@ def blog_article_detail(
         expand_affiliate_links(
             body=article.body,
             db=db,
+            blog_id=article.blog_id,
         )
     )
 
